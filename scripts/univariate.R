@@ -4,6 +4,7 @@ library(ggrepel)
 library(pheatmap)
 library(extrafont)
 library(RColorBrewer)
+# also need to import VennDiagram
 
 ##### Univariate Statistics and Fold Change
 
@@ -57,6 +58,8 @@ do_univariate <- function(d3_mod) {
 
 # from visual_functions.R in generate_html_reports repo
 # modified to incorporate the difference of MS data
+#' @import dplyr
+#' @import ggplot2
 deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col,
                            padj_col = NULL, log2fc_col = NULL) {
   if (!is.null(padj_col)) padj_col = padj_col else padj_col = "padj"
@@ -74,7 +77,7 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
   down_no = nrow(filter(df_filt, status == 'Down'))
   # truncate feature names if too long
   df_filt <- df_filt %>%
-    mutate(across(variable, ~ str_trunc(., width = 15, ellipsis = "")))
+    mutate(across(variable, ~ stringr::str_trunc(., width = 15, ellipsis = "")))
   up_top10 <- df_filt_up %>% arrange(padj_col) %>% dplyr::slice(1:10)
   down_top10 <- df_filt_down %>% arrange(padj_col) %>% dplyr::slice(1:10)
   ###
@@ -97,11 +100,11 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
     ###
     geom_point(data = up_top10, shape = 21, fill = "red",
                colour = "black", size = 2, na.rm = TRUE) +
-    geom_text_repel(data = up_top10, aes(label = !!feature_col), na.rm = TRUE,
+    ggrepel::geom_text_repel(data = up_top10, aes(label = !!feature_col), na.rm = TRUE,
                     size = 4, family = "Lucida Sans", max.overlaps = 20) +
     geom_point(data = down_top10, shape = 21, fill = "blue",
                colour = "black", size = 2, na.rm = TRUE) +
-    geom_text_repel(data = down_top10, aes(label = !!feature_col), na.rm = TRUE,
+    ggrepel::geom_text_repel(data = down_top10, aes(label = !!feature_col), na.rm = TRUE,
                     size = 4, family = "Lucida Sans", max.overlaps = 20) +
     ###
     theme_bw(base_size = 14) +
@@ -122,19 +125,26 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
 }
 
 # from visual_functions.R in generate_html_reports repo
+#' @import dplyr
 deseq2_hm <- function(transformed_count, df_filt, feature_col,
                       anno, top_n = NULL, col_order = NULL,
                       save = TRUE, padj_col = NULL) {
   if (!is.null(padj_col)) padj_col = padj_col else padj_col = "padj"
   cluster_cols <- TRUE
-  # colors for hm and anno
-  inc_col <- colorRampPalette(brewer.pal(n = 11, name = "RdYlBu"))(200)
-  temp_a <- sample(brewer.pal(8, "Dark2"), n_distinct(anno[1]))
+  ##### colors for hm and anno
+  inc_col <- colorRampPalette(RColorBrewer::brewer.pal(n = 11, name = "RdYlBu"))(200)
+  anno_col <- list()
+  temp_a <- sample(RColorBrewer::brewer.pal(8, "Dark2"), n_distinct(anno[1]))
   names(temp_a) <- levels(anno[[1]])
   anno_col[[names(anno)]] <- temp_a
+  ##### Plot sub-hm if top_n is provided
   if(!is.null(top_n)) {
     top_n_df_filt <- df_filt %>% arrange(padj_col) %>% dplyr::slice(1:top_n)
-    sub_mat <- transformed_count[top_n_df_filt[[feature_col]], ]
+    sub_mat <- top_n_df_filt %>%
+      select(feature_col) %>%
+      left_join(transformed_count) %>%
+      column_to_rownames("variable")
+      # transformed_count[top_n_df_filt[[feature_col]], ]
   } else {
     sub_mat <- df_filt %>%
       select(feature_col) %>%
@@ -142,6 +152,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col,
       column_to_rownames("variable")
       # transformed_count[df_filt[[feature_col]], ]
   }
+  ##### Specify parameters depending on hm size
   if (nrow(sub_mat) > 200) rowname_switch <- FALSE else rowname_switch <- TRUE
   if (ncol(sub_mat) > 60) {
     cellwidth = 10; fontsize = 6
@@ -151,7 +162,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col,
   # draw hm
   if (!is.null(col_order)) { col_order = col_order; cluster_cols = FALSE;
 
-    p3 <- pheatmap(
+    p3 <- pheatmap::pheatmap(
       sub_mat,
       annotation_col = anno,
       annotation_colors = anno_col,
@@ -172,7 +183,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col,
                    dim(sub_mat)[1], "features"))
   } else {
 
-    p3 <- pheatmap(
+    p3 <- pheatmap::pheatmap(
       sub_mat,
       annotation_col = anno,
       annotation_colors = anno_col,
@@ -194,6 +205,39 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col,
                            plot = p3, dpi = 300, width = 10, height = 10)
 }
 
+# venn diagram
+make_venn <- function(v_data) {
+  grid::grid.newpage()
+  my_col <- RColorBrewer::brewer.pal(8, "Pastel2")
+  pairwise_venn_set12 <- VennDiagram::venn.diagram(
+    x = v_data,
+    filename = NULL,
+    category.names = c(
+      sprintf("T Test\n %i", length(plot_set1)),
+      sprintf("Wilcoxon Test\n %i", length(plot_set2))
+    ),
+    margin = 0.2,
+    resolution = 300,
+    euler.d = FALSE,
+    scaled = FALSE,
+    fill = my_col[1:2],
+    lwd = 1,
+    alpha = c(0.7, 0.7),
+    col = c("grey60","grey60"),
+    cat.fontface = c("bold", "bold"),
+    cat.fontfamily = c("Lucida Sans", "Lucida Sans"),
+    cat.pos = c(45, 315),
+    cat.dist = c(0.05, 0.05),
+    ext.text = TRUE,
+    # main = sprintf("Overlapped features, FDR: %.2f", fdr),
+    # main.fontface = "bold",
+    # main.fontfamily = "Lucida Sans",
+    # main.cex = 1.5,
+    # main.pos = c(0.5, 0.8)
+
+  )
+  grid::grid.draw(pairwise_venn_set12)
+}
 ################
 
 
@@ -253,8 +297,6 @@ uni_res <- uni_res %>%
   mutate(padj = min(c(BHT, BHW))) %>% # get the lowest padj
   ungroup() %>%
   mutate(`-log10padj` = -log(padj))
-  # # temp for now for testing, remove the outlier peptide
-  # filter(`-log10padj` < 130)
 
 # get DE features only tibble
 uni_res_filt <- uni_res %>%
@@ -266,6 +308,7 @@ uni_res_filt <- uni_res %>%
 deseq2_volcano(uni_res, uni_res_filt, fdr = fdr, log2fc = log2fc,
                "variable", padj_col = "padj", log2fc_col = "FC(log2)")
 
+# ----------------------------------------------------------
 # prep the annotation for hm
 anno <- data.frame(Label = as.factor(t(d3)[, "Label"]))
 
@@ -278,9 +321,18 @@ d1 <- d1 %>%
 all(uni_res_filt$variable %in% d1$variable)
 
 # 2) heatmap/multiple heatmaps?
-# build user_supplied_col_order into the function, default to colnames()
-deseq2_hm(d1, uni_res_filt, "variable",
-          anno, top_n = NULL, col_order = NULL,
+deseq2_hm(d1, uni_res_filt, "variable", anno, top_n = NULL, col_order = NULL,
           save = FALSE, padj_col = NULL)
 
+# ------------------------------------------------------------
 # 3) venn diagram between t-test and wilcox test
+plot_set1 <- uni_res %>% filter(pT < fdr) %>% pull(variable)
+plot_set2 <- uni_res %>% filter(pW < fdr) %>% pull(variable)
+# plot_set1 <- wt %>% rownames_to_column("variable") %>% filter(pT < fdr) %>% pull(variable)
+# plot_set2 <- wt %>% rownames_to_column("variable") %>% filter(pW < fdr) %>% pull(variable)
+v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+
+make_venn(v_data)
+
+# venn diagram numbers are the same between Bridget's code and mine
+# BHW discrepancy likely is not a cause for concern.
