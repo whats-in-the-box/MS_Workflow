@@ -3,6 +3,7 @@ library(ggplot2)
 library(ggrepel)
 library(pheatmap)
 library(extrafont)
+library(RColorBrewer)
 
 ##### Univariate Statistics and Fold Change
 
@@ -71,6 +72,9 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
   df_filt_down <- df_filt %>% filter(status == "Down")
   up_no = nrow(filter(df_filt, status == 'Up'))
   down_no = nrow(filter(df_filt, status == 'Down'))
+  # truncate feature names if too long
+  df_filt <- df_filt %>%
+    mutate(across(variable, ~ str_trunc(., width = 15, ellipsis = "")))
   up_top10 <- df_filt_up %>% arrange(padj_col) %>% dplyr::slice(1:10)
   down_top10 <- df_filt_down %>% arrange(padj_col) %>% dplyr::slice(1:10)
   ###
@@ -118,35 +122,74 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
 }
 
 # from visual_functions.R in generate_html_reports repo
-deseq2_hm <- function(transformed_count, df_filt,
-                      anno, top_n = NULL, save = TRUE) {
+deseq2_hm <- function(transformed_count, df_filt, feature_col,
+                      anno, top_n = NULL, col_order = NULL,
+                      save = TRUE, padj_col = NULL) {
+  if (!is.null(padj_col)) padj_col = padj_col else padj_col = "padj"
+  cluster_cols <- TRUE
+  # colors for hm and anno
   inc_col <- colorRampPalette(brewer.pal(n = 11, name = "RdYlBu"))(200)
+  temp_a <- sample(brewer.pal(8, "Dark2"), n_distinct(anno[1]))
+  names(temp_a) <- levels(anno[[1]])
+  anno_col[[names(anno)]] <- temp_a
   if(!is.null(top_n)) {
-    top_n_df_filt <- df_filt %>% arrange(padj) %>% dplyr::slice(1:top_n)
-    sub_mat <- transformed_count[top_n_df_filt$gene, ]
-    rowname_switch <- TRUE
+    top_n_df_filt <- df_filt %>% arrange(padj_col) %>% dplyr::slice(1:top_n)
+    sub_mat <- transformed_count[top_n_df_filt[[feature_col]], ]
   } else {
-    sub_mat <- transformed_count[df_filt$gene, ]
-    rowname_switch <- FALSE
+    sub_mat <- df_filt %>%
+      select(feature_col) %>%
+      left_join(transformed_count) %>%
+      column_to_rownames("variable")
+      # transformed_count[df_filt[[feature_col]], ]
   }
+  if (nrow(sub_mat) > 200) rowname_switch <- FALSE else rowname_switch <- TRUE
+  if (ncol(sub_mat) > 60) {
+    cellwidth = 10; fontsize = 6
+  } else {
+    cellwidth = 30; fontsize = 8}
+
   # draw hm
-  p3 <- pheatmap(
-    sub_mat,
-    annotation_col = anno,
-    color=inc_col,
-    cellwidth = 30.0,
-    # border_color = "black",
-    fontsize_row = 8,
-    fontsize_col = 8,
-    show_rownames = rowname_switch,
-    treeheight_col = 25,
-    treeheight_row = 25,
-    angle_col = 45,
-    fontsize_number = 6,
-    scale = "row",
-    annotation_names_col = FALSE,
-    main = paste("Clustering of normalized count (Z-score): ",
-                 dim(sub_mat)[1], "features"))
+  if (!is.null(col_order)) { col_order = col_order; cluster_cols = FALSE;
+
+    p3 <- pheatmap(
+      sub_mat,
+      annotation_col = anno,
+      annotation_colors = anno_col,
+      color = inc_col,
+      cluster_cols = cluster_cols,
+      labels_col = col_order,
+      cellwidth = cellwidth,
+      fontsize_row = fontsize,
+      fontsize_col = fontsize,
+      show_rownames = rowname_switch,
+      treeheight_col = 25,
+      treeheight_row = 25,
+      angle_col = 45,
+      fontsize_number = 6,
+      scale = "row",
+      annotation_names_col = FALSE,
+      main = paste("Clustering of normalized count (Z-score): ",
+                   dim(sub_mat)[1], "features"))
+  } else {
+
+    p3 <- pheatmap(
+      sub_mat,
+      annotation_col = anno,
+      annotation_colors = anno_col,
+      color = inc_col,
+      cellwidth = cellwidth,
+      fontsize_row = fontsize,
+      fontsize_col = fontsize,
+      show_rownames = rowname_switch,
+      treeheight_col = 25,
+      treeheight_row = 25,
+      angle_col = 45,
+      fontsize_number = 6,
+      scale = "row",
+      annotation_names_col = FALSE,
+      main = paste("Clustering of normalized count (Z-score): ",
+                   dim(sub_mat)[1], "features"))
+  }
   if (isTRUE(save)) ggsave("DE_features_heatmap_all_replicates.png", device = "png",
                            plot = p3, dpi = 300, width = 10, height = 10)
 }
@@ -169,6 +212,9 @@ uni_res <- do_univariate(d3_mod)
 head(wt)
 uni_res["P68871-M.VHLTPEEKSAVTAL.W" == uni_res$variable, ]
 uni_res["P68871-L.WGKVNVDEVGGEALGRLL.V" == uni_res$variable, ]
+
+uni_res["AAHLPAEFTPAV" == uni_res$variable, ]
+uni_res["AAHLPAEFTPAVHAS" == uni_res$variable, ]
 
 # > head(wt)
 # pT         BHT           pW
@@ -201,29 +247,40 @@ uni_res["P68871-L.WGKVNVDEVGGEALGRLL.V" == uni_res$variable, ]
 fdr = 0.05
 log2fc = 0
 
-# format tibble for plotting
+# format univariate results tibble for plotting
 uni_res <- uni_res %>%
   rowwise() %>%
   mutate(padj = min(c(BHT, BHW))) %>% # get the lowest padj
   ungroup() %>%
-  mutate(`-log10padj` = -log(padj)) %>%
-  # truncate feature names if too long
-  mutate(across(variable, ~ str_trunc(., width = 12, ellipsis = ""))) %>%
-  # temp for now for testing, remove the outlier peptide
-  filter(`-log10padj` < 130)
+  mutate(`-log10padj` = -log(padj))
+  # # temp for now for testing, remove the outlier peptide
+  # filter(`-log10padj` < 130)
 
 # get DE features only tibble
 uni_res_filt <- uni_res %>%
   filter(BHT < fdr | BHW < fdr) %>%
   mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
 
+
 # 1) volcano plot
 deseq2_volcano(uni_res, uni_res_filt, fdr = fdr, log2fc = log2fc,
                "variable", padj_col = "padj", log2fc_col = "FC(log2)")
 
-# 2) heatmap/multiple heatmaps?
-# use complexHeatmap?
-# build user_supplied_col_order into the function, default to colnames()
+# prep the annotation for hm
+anno <- data.frame(Label = as.factor(t(d3)[, "Label"]))
 
+# prep the transformed matrix for hm
+d1 <- d1 %>%
+  rownames_to_column("variable") %>%
+  mutate(across(-variable, as.numeric))
+
+# sanity check the variable names matched
+all(uni_res_filt$variable %in% d1$variable)
+
+# 2) heatmap/multiple heatmaps?
+# build user_supplied_col_order into the function, default to colnames()
+deseq2_hm(d1, uni_res_filt, "variable",
+          anno, top_n = NULL, col_order = NULL,
+          save = FALSE, padj_col = NULL)
 
 # 3) venn diagram between t-test and wilcox test
