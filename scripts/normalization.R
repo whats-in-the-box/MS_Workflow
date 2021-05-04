@@ -147,7 +147,6 @@ normalization <- function(df, method = "EigenMS"){
   } else if (choices == "EigenMS"){
     norm_df = EigenMS_norm(df,grps)
   }
-  return(norm_df)
 
   ### Histogram
   pdf('hist.pdf')
@@ -163,4 +162,8 @@ normalization <- function(df, method = "EigenMS"){
   make_pca(norm_df,labels)
   ggsave("pca.pdf", width = 15, height = 10, p_pca)
   dev.off()
+
+  ### add label back to normalized data frame
+  norm_df = rbind.data.frame(labels, norm_df)
+  return(norm_df)
 }
