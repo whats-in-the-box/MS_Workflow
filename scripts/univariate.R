@@ -322,7 +322,11 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col, anno,
   if (isTRUE(save)) {
     ggsave("DE_features_heatmap_all_replicates.png",
       device = "png",
-      plot = p3, dpi = 300, width = 10, height = 10
+      plot = p3, dpi = 300, width = 17, height = 10
+    )
+    ggsave("DE_features_heatmap_all_replicates.pdf",
+           device = "pdf",
+           plot = p3, dpi = 300, width = 17, height = 10
     )
   }
 }
@@ -358,7 +362,7 @@ make_venn <- function(v_data) {
     alpha = c(0.7, 0.7),
     col = c("grey60", "grey60"),
     cat.fontface = c("bold", "bold"),
-    cat.fontfamily = c("Lucida Sans", "Lucida Sans"),
+    # cat.fontfamily = c("Lucida Sans", "Lucida Sans"),
     cat.dist = c(0.2, 0.2),
     ext.text = TRUE
     # main = sprintf("Overlapped features, FDR: %.2f", fdr),
@@ -371,9 +375,10 @@ make_venn <- function(v_data) {
 }
 ################
 
+load("normalization.rda")
 
 # first do data formatting
-d3_mod <- t(d3) %>%
+d3_mod <- t(norm_d1) %>%
   as_tibble() %>%
   mutate(across(-Label, as.numeric)) %>%
   rename_with(str_trim)
@@ -381,44 +386,10 @@ d3_mod <- t(d3) %>%
 # then do univariate analysis
 uni_res <- do_univariate(d3_mod)
 
-
-########### check with Bridget
-# BHW are kinda different between my code and Bridget's
-head(wt)
-uni_res["P68871-M.VHLTPEEKSAVTAL.W" == uni_res$variable, ]
-uni_res["P68871-L.WGKVNVDEVGGEALGRLL.V" == uni_res$variable, ]
-
-uni_res["AAHLPAEFTPAV" == uni_res$variable, ]
-uni_res["AAHLPAEFTPAVHAS" == uni_res$variable, ]
-
-# > head(wt)
-# pT         BHT           pW
-# P68871-M.VHLTPEEKSAVTAL.W     0.0005579333 0.001556703 0.0003792417
-# P68871-L.WGKVNVDEVGGEALGRLL.V 0.2217473194 0.306513114 0.2410024539
-# P68871-L.WGKVNVDEVGGEAL.G     0.0003873439 0.001101128 0.0009007453
-# P68871-V.AGVANALAHKYH         0.0094188851 0.019529065 0.0107771150
-# P68871-D.GLAHLDNLKGTF.A       0.0032427103 0.008097818 0.0001870327
-# P68871-V.HLTPEEK.S            0.4059796106 0.494616668 0.6151583083
-# BHW   FC(lin)
-# P68871-M.VHLTPEEKSAVTAL.W     0.004343393  6.187240
-# P68871-L.WGKVNVDEVGGEALGRLL.V 0.419922624  2.391418
-# P68871-L.WGKVNVDEVGGEAL.G     0.003130252  3.638086
-# P68871-V.AGVANALAHKYH         0.040491455  1.542126
-# P68871-D.GLAHLDNLKGTF.A       0.020222175  2.103264
-# P68871-V.HLTPEEK.S            0.602605752 -1.169379
-# > uni_res["P68871-M.VHLTPEEKSAVTAL.W" == uni_res$variable, ]
-# # A tibble: 1 x 6
-# variable                        pT     BHT       pW     BHW `FC(lin)`
-# <chr>                        <dbl>   <dbl>    <dbl>   <dbl>     <dbl>
-#   1 P68871-M.VHLTPEEKSAVTAL.W 0.000558 0.00156 0.000379 0.00103      6.19
-# > uni_res["P68871-L.WGKVNVDEVGGEALGRLL.V" == uni_res$variable, ]
-# # A tibble: 1 x 6
-# variable                         pT   BHT    pW   BHW `FC(lin)`
-# <chr>                         <dbl> <dbl> <dbl> <dbl>     <dbl>
-#   1 P68871-L.WGKVNVDEVGGEALGRLL.V 0.222 0.307 0.241 0.325      2.39
+readr::write_csv(uni_res[,1:7], file = "univariate_results.csv")
 
 
-# visualizations
+#-------------------------------- visualizations
 fdr <- 0.05
 log2fc <- 0
 
@@ -432,7 +403,8 @@ uni_res <- uni_res %>%
 
 # get DE features only tibble
 uni_res_filt <- uni_res %>%
-  filter(BHT < fdr | BHW < fdr) %>%
+  # filter(BHT < fdr | BHW < fdr) %>%
+  filter(BHT < fdr & BHW < fdr) %>%
   mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
 
 
@@ -444,34 +416,43 @@ deseq2_volcano(uni_res, uni_res_filt,
 
 # -----------------------------------------------------------------------------
 # prep the annotation for hm
-anno <- data.frame(Label = as.factor(t(d3)[, "Label"]))
+anno <- data.frame(Label = as.factor(t(norm_d1)[, "Label"]))
 
 # prep the transformed matrix for hm
-d1 <- d1 %>%
+d1_mod <- norm_d1 %>%
   rownames_to_column("variable") %>%
   mutate(across(-variable, as.numeric))
 
 # sanity check the variable names matched
-all(uni_res_filt$variable %in% d1$variable)
+all(uni_res_filt$variable %in% d1_mod$variable)
 
 # 2) heatmap/multiple heatmaps?
-deseq2_hm(d1, uni_res_filt, "variable", anno,
+deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
   top_n = NULL, col_order = NULL,
   save = FALSE, padj_col = NULL
+)
+
+deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+          top_n = NULL, col_order = NULL,
+          save = TRUE, padj_col = NULL
 )
 
 # -----------------------------------------------------------------------------
 # 3) venn diagram between t-test and wilcox test
 plot_set1 <- uni_res %>%
-  filter(pT < fdr) %>%
+  filter(BHT < fdr) %>%
   pull(variable)
 plot_set2 <- uni_res %>%
-  filter(pW < fdr) %>%
+  filter(BHW < fdr) %>%
   pull(variable)
-# plot_set1 <- wt %>% rownames_to_column("variable") %>% filter(pT < fdr) %>% pull(variable)
-# plot_set2 <- wt %>% rownames_to_column("variable") %>% filter(pW < fdr) %>% pull(variable)
-v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+# v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
 
-make_venn(v_data)
-# venn diagram numbers are the same between Bridget's code and mine
-# BHW discrepancy likely is not a cause for concern.
+# loadfonts(device="postscript")
+v1 <- make_venn(v_data)
+ggsave("univariate_venn.png", v1, device = "png", width = 6, height = 6)
+ggsave("univariate_venn.pdf", v1, device = "pdf", width = 6, height = 6)
+
+# pdf(file = "univariate_venn.pdf", family = "Lucida Sans Unicode", width = 6, height = 6)
+# plot(v1)
+# dev.off()
