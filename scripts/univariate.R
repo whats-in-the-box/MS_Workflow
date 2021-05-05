@@ -336,7 +336,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col, anno,
 #'
 #' \code{make_venn} is a convenient wrapper around \code{VennDiagram::venn.diagram()} to draw a pairwise venn diagram.
 #'
-#' @param v_data A list of vectors (e.g., integers, chars), with each component
+#' @param v_data A named list of vectors (e.g., integers, chars), with each component
 #' corresponding to a separate circle in the Venn diagram.
 #'
 #' @return a \code{ggplot} of the venn diagram
@@ -432,10 +432,10 @@ deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
   save = FALSE, padj_col = NULL
 )
 
-deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
-          top_n = NULL, col_order = NULL,
-          save = TRUE, padj_col = NULL
-)
+# deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+#           top_n = NULL, col_order = NULL,
+#           save = TRUE, padj_col = NULL
+# )
 
 # -----------------------------------------------------------------------------
 # 3) venn diagram between t-test and wilcox test
