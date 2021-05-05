@@ -2,9 +2,6 @@
 library(ProteoMM)
 library(tidyverse)
 library(ggplot2)
-library(ggrepel)
-library(pheatmap)
-library(RColorBrewer)
 
 ##### Normalization
 
@@ -18,7 +15,7 @@ library(RColorBrewer)
 #'   be specified as the same as the input matrix.
 #'
 #' @param df
-#' @return
+#' @return a cubic-spline normalized data matrix
 cubic_norm <- function(df){
   df= as.matrix(df)
 
@@ -36,7 +33,7 @@ cubic_norm <- function(df){
 #'
 #' @param df
 #' @param grps
-#' @return
+#' @return a EigenMS normalized data matrix
 EigenMS_norm <- function(df,grps){
 
   df <- as.data.frame(df) #feature x sample
@@ -58,14 +55,13 @@ EigenMS_norm <- function(df,grps){
 }
 
 # ------------------------------------------------------------------------------
-#' \code{make_hist} is a visualization function that produce side-by-side histogram
-#'   from log2 transformed data matrix and normalized data matrix using \code{hist()} and
+#' \code{make_hist} is a visualization function that produce side-by-side histograms
+#'   from a data matrix, before and after selected normalization method, using \code{hist()} and
 #'   \code{MASS::truehist()} functions, respectively.
 #'
 #' @param df
 #' @param norm_df
-#' @import
-#' @return
+#' @return a graph exported in working directory
  make_hist = function(df,norm_df){
   df = as.data.frame(df)
   norm_df = as.data.frame(norm_df)
@@ -77,12 +73,12 @@ EigenMS_norm <- function(df,grps){
 }
 
 # ------------------------------------------------------------------------------
-#' \code{make_qqplot} is a visualization function that produce side_by_side qqplot
-#'   from log2 transformed data matrix and normalized data matrix using \code{car::qqplot()}.
+#' \code{make_qqplot} is a visualization function that produce side_by_side QQ plots
+#'   from a data matrix, before and after selected normalization method, using \code{car::qqplot()}.
 #'
 #' @param df
 #' @param norm_df
-#' @return
+#' @return a graph exported in working directory
 make_qqplot = function(df,norm_df){
   df = as.data.frame(df)
   norm_df = as.data.frame(norm_df)
@@ -95,15 +91,32 @@ make_qqplot = function(df,norm_df){
 
 # ------------------------------------------------------------------------------
 #' \code{make_pca} is a visualization function that wraps \code{pcaMethods::pca()}
-#'   and \code{ggplot()} together. The function takes a normalized data matrix and
+#'   and \code{ggplot()} together. The function produce side-by-side PCA plots
+#'   from a data matrix, before and after selected normalization method, and
 #'   a \code{labels} vector specifying membership of the samples.
 #'
+#' @param df
 #' @param norm_df
 #' @param labels
-#' @return
- make_pca = function(norm_df,labels){
-  # run PCA
-  pc = pcaMethods::pca(t(norm_df), nPcs = 3,method = "svd", scale = "pareto",center = TRUE)
+#' @return a graph contains side-by side PCA plots
+ make_pca = function(df, norm_df,labels){
+  # run PCA for df
+  pc_df = pcaMethods::pca(t(df), nPcs = 3,method = "svd", scale = "pareto",center = TRUE)
+  df_2 = rbind.data.frame(labels,df)%>%
+    t(.)%>%
+    as.data.frame(.)%>%
+    rownames_to_column(.)%>%
+    as_tibble(.)%>%
+    select(rowname,Label)%>%
+    column_to_rownames(., var = "rowname")%>%
+    merge(.,pcaMethods::scores(pc_df), by=0)
+  # draw PCA for df
+  p_pca_df = ggplot(df_2, aes(PC1, PC2,colour=Label)) + geom_point() + stat_ellipse() +
+    xlab(paste("PC1", round(pc_df@R2[1] * 100, digits = 1), "% of the variance")) +
+    ylab(paste("PC2", round(pc_df@R2[2] * 100, digits = 1), "% of the variance")) + ggtitle(label = "Before normalization")
+
+  # run PCA for norm_df
+  pc_norm = pcaMethods::pca(t(norm_df), nPcs = 3,method = "svd", scale = "pareto",center = TRUE)
   norm_df_2 = rbind.data.frame(labels,norm_df)%>%
     t(.)%>%
     as.data.frame(.)%>%
@@ -111,21 +124,23 @@ make_qqplot = function(df,norm_df){
     as_tibble(.)%>%
     select(rowname,Label)%>%
     column_to_rownames(., var = "rowname")%>%
-    merge(.,pcaMethods::scores(pc), by=0)
-  # draw PCA
-  p_pca = ggplot(norm_df_2, aes(PC1, PC2,colour=Label)) + geom_point() + stat_ellipse() +
-    xlab(paste("PC1", round(pc@R2[1] * 100, digits = 1), "% of the variance")) +
-    ylab(paste("PC2", round(pc@R2[2] * 100, digits = 1), "% of the variance")) #+ ggtitle(label = "After normalization")
-  return(p_pca)
+    merge(.,pcaMethods::scores(pc_norm), by=0)
+  # draw PCA for norm_df
+  p_pca_norm = ggplot(norm_df_2, aes(PC1, PC2,colour=Label)) + geom_point() + stat_ellipse() +
+    xlab(paste("PC1", round(pc_norm@R2[1] * 100, digits = 1), "% of the variance")) +
+    ylab(paste("PC2", round(pc_norm@R2[2] * 100, digits = 1), "% of the variance")) + ggtitle(label = "After normalization")
+
+  p = gridExtra::grid.arrange(p_pca_df,p_pca_norm, ncol = 1, top=grid::textGrob("PCA", gp=grid::gpar(fontsize=15,face = "bold")))
+  return(p)
 }
 
 # ------------------------------------------------------------------------------
 #' \code{normalization} is a wrapper function to achieve normalization of the data matrix,
-#'   feature x sample the column \code{Label} specifying membership of the samples.
+#'   feature x sample with a row \code{Label} specifying membership of the samples.
 #'
 #' @param df
 #' @param method
-#' @return
+#' @return a normalized data matrix and three graphs exported in working directory
 normalization <- function(df, method = "EigenMS"){
 
   ### data wrangling
@@ -149,18 +164,18 @@ normalization <- function(df, method = "EigenMS"){
   }
 
   ### Histogram
-  pdf('hist.pdf')
+  pdf('hist.pdf', width = 15, height = 10)
   make_hist(df,norm_df)
   dev.off()
 
   ### QQ plot
-  pdf('qqplot.pdf')
+  pdf('qqplot.pdf',width = 15, height = 10)
   make_qqplot(df,norm_df)
   dev.off()
 
   ### PCA
-  make_pca(norm_df,labels)
-  ggsave("pca.pdf", width = 15, height = 10, p_pca)
+  p = make_pca(df, norm_df,labels)
+  ggsave("pca.pdf", width = 15, height = 10, p)
   dev.off()
 
   ### add label back to normalized data frame
