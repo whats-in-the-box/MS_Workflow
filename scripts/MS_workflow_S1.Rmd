@@ -1,0 +1,70 @@
+---
+title: "MS Workflow Step 1"
+author: "BT"
+date: "4/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source("assessFeatures.R")
+source("uploadfile.R")
+```
+
+upload file 
+```{r}
+fh <- upload.file("../Checco/Unnormalized peak areas/Unnormalized all protein-peptides No Dup.csv", 1, 2:88)
+labels_d1 <- as.matrix(fh$Label); row.names(labels_d1) <- row.names(fh); colnames(labels_d1) <- "Label"
+print(sum(fh==0))
+write(paste("Missing signal raw file:", sum(fh==0)), "missingSignals.txt", append = TRUE)
+```
+
+assess features; return present features
+```{r}
+raw.file <- presence.absence(fh)[,-(1:2)]
+head(raw.file)
+print(sum(is.na(raw.file)))
+write(paste("Missing signal before imputation:", sum(is.na(raw.file))), "missingSignals.txt", append = TRUE)
+```
+
+Impute missing values
+```{r}
+imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = 7, rowmax = 0.5, 
+                              colmax = 0.8, maxp = 1500)
+
+imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
+MASS::truehist(unlist(imputed_d1), main = "Imputed", nbins = 50)
+write.csv(imputed_d1, "imputedData.csv")
+print(sum(imputed_d1==0))
+write(paste("Missing signal after imputation:", sum(imputed_d1==0)))
+```
+
+PCA
+```{r}
+## PCA
+library(ggplot2)
+library(pcaMethods)
+
+imputed_d2 <- rbind.data.frame(t(labels_d1), imputed_d1)
+pc1 <- pca(t(imputed_d1), scale = "pareto")
+pc1merged <- merge(t(imputed_d2), scores(pc1), by=0)
+
+pdf("PCA-Initial.pdf")
+ggplot(pc1merged, aes(PC1, PC2, colour=Label)) +
+  geom_point() +
+  stat_ellipse() +
+  xlab(paste("PC1", round((pc1@R2[1] * 100), digits = 1), "% of the variance")) +
+  ylab(paste("PC2", round((pc1@R2[2] * 100), digits = 1), "% of the variance"))
+dev.off() 
+```
+
+
+```{r}
+log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
+
+pdf("Histogram-log2transformedNoDup.pdf")
+MASS::truehist(unlist(log2_d1), main = "Log2 Transformed", nbins = 50)
+dev.off()
+
+log2_d1 <- rbind.data.frame(t(labels_d1), log2_d1)
+```
+
