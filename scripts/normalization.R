@@ -93,16 +93,16 @@ make_qqplot = function(df,norm_df){
 #' \code{make_pca} is a visualization function that wraps \code{pcaMethods::pca()}
 #'   and \code{ggplot()} together. The function produce side-by-side PCA plots
 #'   from a data matrix, before and after selected normalization method, and
-#'   a \code{labels} vector specifying membership of the samples.
+#'   a \code{label} vector specifying membership of the samples.
 #'
 #' @param df
 #' @param norm_df
-#' @param labels
+#' @param label
 #' @return a graph contains side-by side PCA plots
- make_pca = function(df, norm_df,labels){
+ make_pca = function(df, norm_df,label){
   # run PCA for df
   pc_df = pcaMethods::pca(t(df), nPcs = 3,method = "svd", scale = "pareto",center = TRUE)
-  df_2 = rbind.data.frame(labels,df)%>%
+  df_2 = rbind.data.frame(label,df)%>%
     t(.)%>%
     as.data.frame(.)%>%
     rownames_to_column(.)%>%
@@ -117,7 +117,7 @@ make_qqplot = function(df,norm_df){
 
   # run PCA for norm_df
   pc_norm = pcaMethods::pca(t(norm_df), nPcs = 3,method = "svd", scale = "pareto",center = TRUE)
-  norm_df_2 = rbind.data.frame(labels,norm_df)%>%
+  norm_df_2 = rbind.data.frame(label,norm_df)%>%
     t(.)%>%
     as.data.frame(.)%>%
     rownames_to_column(.)%>%
@@ -135,18 +135,18 @@ make_qqplot = function(df,norm_df){
 }
 
 # ------------------------------------------------------------------------------
-#' \code{normalization} is a wrapper function to achieve normalization of the data matrix,
+#' \code{do_normalization} is a wrapper function to achieve normalization of the data matrix,
 #'   feature x sample with a row \code{Label} specifying membership of the samples.
 #'
 #' @param df
 #' @param method
 #' @return a normalized data matrix and three graphs exported in working directory
-normalization <- function(df, method = "EigenMS"){
+do_normalization <- function(df, method = "EigenMS"){
 
   ### data wrangling
   df = as.data.frame(df)
-  labels <- as.matrix(df[1,])
-  grps = as.factor(t(labels))
+  label <- as.matrix(df[1,])
+  grps = as.factor(t(label))
 
   method = method
   choices = switch(method, "Cubic Spline" = "Cubic Spline", "EigenMS" = "EigenMS")
@@ -174,11 +174,11 @@ normalization <- function(df, method = "EigenMS"){
   dev.off()
 
   ### PCA
-  p = make_pca(df, norm_df,labels)
+  p = make_pca(df, norm_df,label)
   ggsave("pca.pdf", width = 15, height = 10, p)
   dev.off()
 
   ### add label back to normalized data frame
-  norm_df = rbind.data.frame(labels, norm_df)
+  norm_df = rbind.data.frame(label, norm_df)
   return(norm_df)
 }
