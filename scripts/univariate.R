@@ -375,84 +375,85 @@ make_venn <- function(v_data) {
 }
 ################
 
-load("normalization.rda")
-
-# first do data formatting
-d3_mod <- t(norm_d1) %>%
-  as_tibble() %>%
-  mutate(across(-Label, as.numeric)) %>%
-  rename_with(str_trim)
-
-# then do univariate analysis
-uni_res <- do_univariate(d3_mod)
-
-readr::write_csv(uni_res[,1:7], file = "univariate_results.csv")
-
-
-#-------------------------------- visualizations
-fdr <- 0.05
-log2fc <- 0
-
-# format univariate results tibble for plotting
-uni_res <- uni_res %>%
-  rowwise() %>%
-  mutate(padj = min(c(BHT, BHW))) %>%
-  # get the lowest padj
-  ungroup() %>%
-  mutate(`-log10padj` = -log(padj))
-
-# get DE features only tibble
-uni_res_filt <- uni_res %>%
-  # filter(BHT < fdr | BHW < fdr) %>%
-  filter(BHT < fdr & BHW < fdr) %>%
-  mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
-
-
-# 1) volcano plot
-deseq2_volcano(uni_res, uni_res_filt,
-  fdr = fdr, log2fc = log2fc,
-  "variable", padj_col = "padj", log2fc_col = "FC(log2)"
-)
-
-# -----------------------------------------------------------------------------
-# prep the annotation for hm
-anno <- data.frame(Label = as.factor(t(norm_d1)[, "Label"]))
-
-# prep the transformed matrix for hm
-d1_mod <- norm_d1 %>%
-  rownames_to_column("variable") %>%
-  mutate(across(-variable, as.numeric))
-
-# sanity check the variable names matched
-all(uni_res_filt$variable %in% d1_mod$variable)
-
-# 2) heatmap/multiple heatmaps?
-deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
-  top_n = NULL, col_order = NULL,
-  save = FALSE, padj_col = NULL
-)
-
-# deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
-#           top_n = NULL, col_order = NULL,
-#           save = TRUE, padj_col = NULL
+# load("normalization.rda")
+#
+# # first do data formatting
+# d3_mod <- t(norm_d1) %>%
+#   as_tibble() %>%
+#   mutate(across(-Label, as.numeric)) %>%
+#   rename_with(str_trim)
+#
+# # then do univariate analysis
+# uni_res <- do_univariate(d3_mod)
+#
+# readr::write_csv(uni_res[,1:7], file = "univariate_results.csv")
+#
+#
+# #-------------------------------- visualizations
+# fdr <- 0.05
+# log2fc <- 0
+#
+# # format univariate results tibble for plotting
+# uni_res <- uni_res %>%
+#   rowwise() %>%
+#   mutate(padj = min(c(BHT, BHW))) %>%
+#   # get the lowest padj
+#   ungroup() %>%
+#   mutate(`-log10padj` = -log(padj))
+#
+# # get DE features only tibble
+# uni_res_filt <- uni_res %>%
+#   # filter(BHT < fdr | BHW < fdr) %>%
+#   filter(BHT < fdr & BHW < fdr) %>%
+#   mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
+#
+#
+# # 1) volcano plot
+# deseq2_volcano(uni_res, uni_res_filt,
+#   fdr = fdr, log2fc = log2fc,
+#   "variable", padj_col = "padj", log2fc_col = "FC(log2)"
 # )
-
-# -----------------------------------------------------------------------------
-# 3) venn diagram between t-test and wilcox test
-plot_set1 <- uni_res %>%
-  filter(BHT < fdr) %>%
-  pull(variable)
-plot_set2 <- uni_res %>%
-  filter(BHW < fdr) %>%
-  pull(variable)
-# v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
-v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
-
-# loadfonts(device="postscript")
-v1 <- make_venn(v_data)
-ggsave("univariate_venn.png", v1, device = "png", width = 6, height = 6)
-ggsave("univariate_venn.pdf", v1, device = "pdf", width = 6, height = 6)
-
-# pdf(file = "univariate_venn.pdf", family = "Lucida Sans Unicode", width = 6, height = 6)
-# plot(v1)
-# dev.off()
+#
+# # -----------------------------------------------------------------------------
+# # prep the annotation for hm
+# anno <- data.frame(Label = as.factor(t(norm_d1)[, "Label"]))
+#
+# # prep the transformed matrix for hm
+# d1_mod <- norm_d1 %>%
+#   rownames_to_column("variable") %>%
+#   mutate(across(-variable, as.numeric))
+#
+# # sanity check the variable names matched
+# all(uni_res_filt$variable %in% d1_mod$variable)
+#
+# # 2) heatmap/multiple heatmaps?
+# deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+#   top_n = NULL, col_order = NULL,
+#   save = FALSE, padj_col = NULL
+# )
+#
+# # deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+# #           top_n = NULL, col_order = NULL,
+# #           save = TRUE, padj_col = NULL
+# # )
+#
+# # -----------------------------------------------------------------------------
+# # 3) venn diagram between t-test and wilcox test
+# plot_set1 <- uni_res %>%
+#   filter(BHT < fdr) %>%
+#   pull(variable)
+# plot_set2 <- uni_res %>%
+#   filter(BHW < fdr) %>%
+#   pull(variable)
+# # v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+# v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
+#
+# # loadfonts(device="postscript")
+# v1 <- make_venn(v_data)
+# ggsave("univariate_venn.png", v1, device = "png", width = 6, height = 6)
+# ggsave("univariate_venn.pdf", v1, device = "pdf", width = 6, height = 6)
+#
+#
+# # pdf(file = "univariate_venn.pdf", family = "Lucida Sans Unicode", width = 6, height = 6)
+# # plot(v1)
+# # dev.off()

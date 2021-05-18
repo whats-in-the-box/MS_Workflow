@@ -1,0 +1,179 @@
+---
+title: "MS Workflow draft"
+author: 
+- "BT"
+- "CSL"
+- "MQ"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    
+---
+```{r knitr_opt, include = FALSE}
+  knitr::opts_chunk$set(
+    echo = FALSE,
+    fig.width = 6
+  )
+```
+
+```{r setup, message = FALSE, warning = FALSE}
+source("assessFeatures.R")
+source("uploadfile.R")
+source("normality_check.R")
+source("normalization.R")
+source("univariate.R")
+
+suppressPackageStartupMessages(c(
+  library(tidyverse),
+  library(DT),
+  library(ggplot2),
+  library(pcaMethods)
+))
+```
+
+```{r setup_run}
+# user declared variables
+raw_data_file <- "D:/2021_Checco/Unnormalized peak areas/Unnormalized all protein-peptides No Dup.csv"
+
+FDR <- 0.05
+LOG2FC <- 0
+WORKING_DIR <- "wd1"
+dir.create(file.path(WORKING_DIR))
+
+# create an empty data frame to track missing data value
+missing_df <- dplyr::tibble() %>%
+  tibble::add_column(Stage = as.character(""),
+                     No_of_missing = as.numeric(""))
+
+# declare function to add rows to track missing table
+#' Track missing signal at different stages 
+#'
+#' @param stage_name Character. The stage of workflow. 
+#' @param no_of_missing Numeric. The number of missing data.
+#'
+#' @return A data frame.
+#'
+track_missing <- function(stage_name, no_of_missing) {
+  missing_df <- missing_df %>%
+  dplyr::add_row(
+    Stage = stage_name,
+    No_of_missing = no_of_missing
+  )
+  return(missing_df)
+}
+
+#' ggplot version of \code{MASS::truehist()}
+#'
+#' @param data A numeric vector. 
+#' @param title Character. Plot title. 
+#'
+#' @return A histogram.
+ggplot_truehist <- function(data, title) {
+  ggplot() +
+    aes(data) +
+    geom_histogram(aes(y = ..density..), bins = 50, 
+                   fill = "cornflowerblue", color = "gray30") +
+    labs(title = title) + 
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+```
+
+# Data Preparation and formatting 
+
+Upload file... ...
+
+```{r}
+fh <- upload.file(raw_data_file, 1, 2:88)
+labels_d1 <- fh %>%
+  rownames_to_column(var = "rowname") %>%
+  select(Label, rowname) %>%
+  column_to_rownames(var = "rowname") %>%
+  as.matrix()
+# add NA number
+missing_df <- track_missing("Raw file", sum(fh == 0))
+```
+
+
+
+## Assess features and return present features
+
+
+```{r}
+raw.file <- presence.absence(fh)[,-(1:2)]
+# display data
+raw.file %>%
+  datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"),
+            class = "nowrap")
+# add NA number
+missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
+
+```
+
+
+
+## Impute missing values
+
+
+```{r}
+imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = 7, rowmax = 0.5, 
+                              colmax = 0.8, maxp = 1500)
+imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
+# draw histogram
+hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Imputed")
+hist_imputed
+# save data
+write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
+# add NA number
+missing_df <- track_missing("After imputation", sum(imputed_d1==0))
+```
+
+PCA of data matrix after imputation
+
+```{r}
+imputed_d2 <- rbind.data.frame(t(labels_d1), imputed_d1)
+pc1 <- pca(t(imputed_d1), scale = "pareto")
+pc1merged <- merge(t(imputed_d2), scores(pc1), by=0)
+
+# draw pca plot
+pca_initial <- ggplot(pc1merged, aes(PC1, PC2, colour=Label)) +
+  geom_point() +
+  stat_ellipse() +
+  xlab(paste("PC1", round((pc1@R2[1] * 100), digits = 1), "% of the variance")) +
+  ylab(paste("PC2", round((pc1@R2[2] * 100), digits = 1), "% of the variance"))
+pca_initial 
+ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", width = 6, height = 6)
+```
+
+todo: add batch correction - BT
+
+## log 2 transformation
+
+```{r}
+log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
+
+# draw histogram
+hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
+hist_log2
+ggsave(file.path(WORKING_DIR, "Histogram-log2transformedNoDup.pdf"), 
+       hist_log2, device = "pdf", width = 10, height = 8)
+
+log2_d1 <- rbind.data.frame(t(labels_d1), log2_d1)
+```
+
+# Normality check
+
+```{r check_norm, message = FALSE, warning = FALSE, results = "hide"}
+normality_check(log2_d1, WORKING_DIR)
+# b <- car::qqPlot(unlist(t(log2_d1)),main = "QQ plot", xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
+# b
+```
+
+# Normalization {.tabset .tabset-fade}
+
