@@ -10,7 +10,7 @@ output:
     toc: true
     toc_float: true
     number_sections: true
-    theme: flatly
+    theme: paper
     
 ---
 ```{r knitr_opt, include = FALSE}
@@ -20,18 +20,19 @@ output:
   )
 ```
 
-```{r setup, message = FALSE, warning = FALSE}
+```{r setup, message = FALSE, warning = FALSE, results = "hide"}
 source("assessFeatures.R")
 source("uploadfile.R")
 source("normality_check.R")
 source("normalization.R")
 source("univariate.R")
+source("utils.R")
 
 suppressPackageStartupMessages(c(
   library(tidyverse),
-  library(DT),
   library(ggplot2),
-  library(pcaMethods)
+  library(pcaMethods),
+  library(cowplot)
 ))
 ```
 
@@ -66,29 +67,16 @@ track_missing <- function(stage_name, no_of_missing) {
   return(missing_df)
 }
 
-#' ggplot version of \code{MASS::truehist()}
-#'
-#' @param data A numeric vector. 
-#' @param title Character. Plot title. 
-#'
-#' @return A histogram.
-ggplot_truehist <- function(data, title) {
-  ggplot() +
-    aes(data) +
-    geom_histogram(aes(y = ..density..), bins = 50, 
-                   fill = "cornflowerblue", color = "gray30") +
-    labs(title = title) + 
-    theme_classic() +
-    theme(plot.title = element_text(hjust = 0.5))
-}
+
 ```
 
-# Data Preparation and formatting 
+# Data Preparation and formatting {.tabset .tabset-fade}
 
 Upload file... ...
 
 ```{r}
 fh <- upload.file(raw_data_file, 1, 2:88)
+message("The file: ", raw_data_file, " has been uploaded.", sep = "\n")
 labels_d1 <- fh %>%
   rownames_to_column(var = "rowname") %>%
   select(Label, rowname) %>%
@@ -107,7 +95,7 @@ missing_df <- track_missing("Raw file", sum(fh == 0))
 raw.file <- presence.absence(fh)[,-(1:2)]
 # display data
 raw.file %>%
-  datatable(., options = list(pagingType = "full_numbers",
+  DT::datatable(., options = list(pagingType = "full_numbers",
                               pageLength = 10,
                               scrollX = "100%"),
             class = "nowrap")
@@ -115,7 +103,6 @@ raw.file %>%
 missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
 
 ```
-
 
 
 ## Impute missing values
@@ -126,7 +113,8 @@ imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = 7, rowmax = 0.5,
                               colmax = 0.8, maxp = 1500)
 imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
 # draw histogram
-hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Imputed")
+# appropriate title? "Raw values after imputation"
+hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Raw values after Imputation")
 hist_imputed
 # save data
 write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
@@ -134,26 +122,30 @@ write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
 missing_df <- track_missing("After imputation", sum(imputed_d1==0))
 ```
 
-PCA of data matrix after imputation
+
+The table below shows the number of missing values in the dataset 
+at different stages of the workflow:
+
 
 ```{r}
-imputed_d2 <- rbind.data.frame(t(labels_d1), imputed_d1)
-pc1 <- pca(t(imputed_d1), scale = "pareto")
-pc1merged <- merge(t(imputed_d2), scores(pc1), by=0)
+knitr::kable(missing_df, align = "c")
+```
 
-# draw pca plot
-pca_initial <- ggplot(pc1merged, aes(PC1, PC2, colour=Label)) +
-  geom_point() +
-  stat_ellipse() +
-  xlab(paste("PC1", round((pc1@R2[1] * 100), digits = 1), "% of the variance")) +
-  ylab(paste("PC2", round((pc1@R2[2] * 100), digits = 1), "% of the variance"))
-pca_initial 
+
+PCA of data matrix after imputation
+
+
+```{r}
+pca_initial <- ggplot_pca(imputed_d1, labels_d1, "After Imputation")
+pca_initial
 ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", width = 6, height = 6)
 ```
 
 todo: add batch correction - BT
 
+
 ## log 2 transformation
+
 
 ```{r}
 log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
@@ -161,19 +153,65 @@ log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
 # draw histogram
 hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
 hist_log2
+qq_log2 <- ggplot_carqq(unlist(log2_d1), "Log2 Transformed")
+qq_log2
+pca_log2 <- ggplot_pca(log2_d1, labels_d1, "Log2 Transformed")
+pca_log2
+
 ggsave(file.path(WORKING_DIR, "Histogram-log2transformedNoDup.pdf"), 
        hist_log2, device = "pdf", width = 10, height = 8)
 
 log2_d1 <- rbind.data.frame(t(labels_d1), log2_d1)
 ```
 
-# Normality check
 
-```{r check_norm, message = FALSE, warning = FALSE, results = "hide"}
-normality_check(log2_d1, WORKING_DIR)
-# b <- car::qqPlot(unlist(t(log2_d1)),main = "QQ plot", xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
-# b
+# Normality and Missing data check before further normalization
+
+
+The table below shows the number of missing values in the dataset 
+at different stages of the workflow:
+
+
+```{r}
+knitr::kable(missing_df, align = "c")
 ```
+
+```{r, fig.dim = c(10, 5), out.width = "100%"}
+plot_grid(hist_imputed, hist_log2, pca_initial, qq_log2, 
+          nrow = 2)
+```
+
+```{r norm_check1, include = FALSE}
+normality_check(log2_d1)
+```
+
 
 # Normalization {.tabset .tabset-fade}
 
+
+## EigenMS
+
+
+```{r eigenMS}
+norm_eigenms <- do_normalization_short(log2_d1)
+hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "EigenMS")
+hist_eigenms
+qq_eigenms <- ggplot_carqq(unlist(norm_eigenms[-1,]), "EigenMS")
+qq_eigenms
+pca_eigenms <- ggplot_pca(norm_eigenms[-1,], labels_d1, "EigenMS")
+pca_eigenms
+```
+
+
+## Cubic Spline
+
+
+```{r c_spline}
+norm_cspline <- do_normalization_short(log2_d1, method = "Cubic Spline")
+hist_cspline <- ggplot_truehist(unlist(norm_cspline[-1,]), "Cubic Spline")
+hist_cspline
+qq_cspline <- ggplot_carqq(unlist(norm_cspline[-1,]), "Cubic Spline")
+qq_cspline
+pca_cspline <- ggplot_pca(norm_cspline[-1,], labels_d1, "Cubic Spline")
+pca_cspline
+```
