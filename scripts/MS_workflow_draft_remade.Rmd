@@ -177,7 +177,7 @@ knitr::kable(missing_df, align = "c")
 ```
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(hist_imputed, hist_log2, pca_initial, qq_log2, 
+plot_grid(hist_imputed, pca_initial, hist_log2, qq_log2, 
           nrow = 2)
 ```
 
@@ -215,3 +215,28 @@ qq_cspline
 pca_cspline <- ggplot_pca(norm_cspline[-1,], labels_d1, "Cubic Spline")
 pca_cspline
 ```
+
+
+# Normality check for different methods
+
+
+```{r, fig.dim = c(15, 5), out.width = "100%"}
+plot_grid(pca_initial, pca_eigenms, pca_cspline,
+          nrow = 1)
+```
+
+
+```{r, fig.dim = c(10, 5), out.width = "100%"}
+plot_grid(hist_log2, hist_eigenms, hist_cspline,
+          nrow = 1)
+```
+
+
+```{r, fig.dim = c(10, 5), out.width = "100%"}
+plot_grid(qq_log2, qq_eigenms, qq_cspline,
+          nrow = 1)
+```
+
+
+# Univariate 
+
