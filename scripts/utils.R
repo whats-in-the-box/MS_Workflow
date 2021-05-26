@@ -35,6 +35,7 @@ do_normalization_short <- function(df, method = "EigenMS"){
 #' @param title Character. Plot title.
 #'
 #' @return A histogram.
+#'
 ggplot_truehist <- function(data, title) {
   data <- as.numeric(data)
   ggplot() +

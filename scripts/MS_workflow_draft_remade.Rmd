@@ -11,7 +11,7 @@ output:
     toc_float: true
     number_sections: true
     theme: paper
-    
+# runtime: shiny
 ---
 ```{r knitr_opt, include = FALSE}
   knitr::opts_chunk$set(
@@ -32,7 +32,8 @@ suppressPackageStartupMessages(c(
   library(tidyverse),
   library(ggplot2),
   library(pcaMethods),
-  library(cowplot)
+  library(cowplot),
+  library(shiny)
 ))
 ```
 
@@ -66,7 +67,6 @@ track_missing <- function(stage_name, no_of_missing) {
   )
   return(missing_df)
 }
-
 
 ```
 
@@ -136,7 +136,7 @@ PCA of data matrix after imputation
 
 
 ```{r}
-pca_initial <- ggplot_pca(imputed_d1, labels_d1, "After Imputation")
+pca_initial <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation")
 pca_initial
 ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", width = 6, height = 6)
 ```
@@ -192,7 +192,7 @@ normality_check(log2_d1)
 ## EigenMS
 
 
-```{r eigenMS}
+```{r eigenMS, message = FALSE}
 norm_eigenms <- do_normalization_short(log2_d1)
 hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "EigenMS")
 hist_eigenms
@@ -206,7 +206,7 @@ pca_eigenms
 ## Cubic Spline
 
 
-```{r c_spline}
+```{r c_spline, message = FALSE, results = FALSE}
 norm_cspline <- do_normalization_short(log2_d1, method = "Cubic Spline")
 hist_cspline <- ggplot_truehist(unlist(norm_cspline[-1,]), "Cubic Spline")
 hist_cspline
@@ -220,7 +220,7 @@ pca_cspline
 # Normality check for different methods
 
 
-```{r, fig.dim = c(15, 5), out.width = "100%"}
+```{r, fig.dim = c(18, 6), out.width = "100%"}
 plot_grid(pca_initial, pca_eigenms, pca_cspline,
           nrow = 1)
 ```
@@ -239,4 +239,109 @@ plot_grid(qq_log2, qq_eigenms, qq_cspline,
 
 
 # Univariate 
+
+
+```{r, echo = FALSE, eval = FALSE}
+
+selectInput(
+  "norm_method", 
+  "Which method to use for normalization?",
+  list("EigenMS", "Cubic Spline"),
+  )
+
+renderText({
+  paste(input$norm_method, " will be used for downstream analysis. ")
+})
+```
+
+
+The table below shows results of univariate analysis. 
+
+`pT` and `BHT`, *p* values and adjusted *p* values for Student's t-Test and `pW` and `BHW`, *p* values and adjusted *p* values for Wilcoxon Rank Sum and Signed Rank Tests.
+
+
+```{r, message = FALSE}
+
+norm_res <- list("EigenMS" = norm_eigenms, "Cubic Spline" = norm_cspline) 
+norm_method <- "EigenMS"
+
+norm_log2_d1 <- norm_res[[norm_method]]
+
+# first do data formatting
+d3_mod <- t(norm_log2_d1) %>%
+  as_tibble() %>%
+  mutate(across(-Label, as.numeric)) %>%
+  rename_with(str_trim)
+
+# then do univariate analysis
+uni_res <- do_univariate(d3_mod)
+
+# display table
+uni_res %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+```{r, message = FALSE}
+### volcano plot
+# format univariate results tibble for plotting
+uni_res <- uni_res %>%
+  rowwise() %>%
+  mutate(padj = min(c(BHT, BHW))) %>%
+  # get the lowest padj
+  ungroup() %>%
+  mutate(`-log10padj` = -log(padj))
+
+# get DE features only tibble
+uni_res_filt <- uni_res %>%
+  filter(BHT < FDR & BHW < FDR) %>%
+  mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
+
+# 1) volcano plot
+deseq2_volcano(uni_res, uni_res_filt,
+  fdr = FDR, log2fc = LOG2FC,
+  "variable", padj_col = "padj", log2fc_col = "FC(log2)"
+)
+```
+
+
+```{r, message = FALSE, fig.dim = c(16, 8), out.width = "100%"}
+### heatmap
+# prep the annotation for hm
+anno <- data.frame(Label = as.factor(t(norm_log2_d1)[, "Label"]))
+
+# prep the transformed matrix for hm
+d1_mod <- norm_log2_d1[-1, ] %>%
+  rownames_to_column("variable") %>%
+  mutate(across(-variable, as.numeric))
+
+# 2) heatma
+deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+  top_n = NULL, col_order = NULL,
+  save = FALSE, padj_col = NULL
+)
+```
+
+
+```{r, message = FALSE}
+### venn diagram
+plot_set1 <- uni_res %>%
+  filter(BHT < FDR) %>%
+  pull(variable)
+plot_set2 <- uni_res %>%
+  filter(BHW < FDR) %>%
+  pull(variable)
+# v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
+
+make_venn(v_data)
+```
+
+
+# Multivariate
+
 

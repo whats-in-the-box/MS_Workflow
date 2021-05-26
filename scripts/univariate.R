@@ -290,7 +290,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col, anno,
       scale = "row",
       annotation_names_col = FALSE,
       main = paste(
-        "Clustering of normalized count (Z-score): ",
+        "Clustering of normalized expression (Z-score): ",
         dim(sub_mat)[1], "features"
       )
     )
@@ -313,7 +313,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col, anno,
       scale = "row",
       annotation_names_col = FALSE,
       main = paste(
-        "Clustering of normalized count (Z-score): ",
+        "Clustering of normalized expression (Z-score): ",
         dim(sub_mat)[1], "features"
       )
     )
