@@ -1,0 +1,10 @@
+.bluebox {
+  padding: 1em;
+  background: lightblue;
+  color: black;
+  border: 2px white;
+  border-radius: 10px;
+}
+.center {
+  text-align: center;
+}

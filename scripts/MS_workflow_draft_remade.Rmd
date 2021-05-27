@@ -11,6 +11,7 @@ output:
     toc_float: true
     number_sections: true
     theme: paper
+    css: ../box_style.css
 # runtime: shiny
 ---
 ```{r knitr_opt, include = FALSE}
@@ -27,6 +28,7 @@ source("normality_check.R")
 source("normalization.R")
 source("univariate.R")
 source("utils.R")
+source("multivariate.R")
 
 suppressPackageStartupMessages(c(
   library(tidyverse),
@@ -144,7 +146,7 @@ ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", w
 todo: add batch correction - BT
 
 
-## log 2 transformation
+## Log 2 transformation
 
 
 ```{r}
@@ -237,9 +239,7 @@ plot_grid(qq_log2, qq_eigenms, qq_cspline,
           nrow = 1)
 ```
 
-
-# Univariate 
-
+<!-- the below shiny block worked but cannot do what I have in mind -->
 
 ```{r, echo = FALSE, eval = FALSE}
 
@@ -254,19 +254,33 @@ renderText({
 })
 ```
 
+:::: {.bluebox data-latex=""}
+::: {.center data-latex=""}
+**ATTENTION**
+:::
+
+Please change the normalization method `norm_method` below to the chosen normalization method for downstream analysis:
+
+::::
+
+
+```{r choose_norm, echo = TRUE}
+norm_method <- "EigenMS"
+
+norm_res <- list("EigenMS" = norm_eigenms, "Cubic Spline" = norm_cspline) 
+norm_log2_d1 <- norm_res[[norm_method]]
+```
+
+
+# Univariate 
+
 
 The table below shows results of univariate analysis. 
 
 `pT` and `BHT`, *p* values and adjusted *p* values for Student's t-Test and `pW` and `BHW`, *p* values and adjusted *p* values for Wilcoxon Rank Sum and Signed Rank Tests.
 
 
-```{r, message = FALSE}
-
-norm_res <- list("EigenMS" = norm_eigenms, "Cubic Spline" = norm_cspline) 
-norm_method <- "EigenMS"
-
-norm_log2_d1 <- norm_res[[norm_method]]
-
+```{r univariate, message = FALSE}
 # first do data formatting
 d3_mod <- t(norm_log2_d1) %>%
   as_tibble() %>%
@@ -286,7 +300,7 @@ uni_res %>%
 ```
 
 
-```{r, message = FALSE}
+```{r univariate_volcano, message = FALSE}
 ### volcano plot
 # format univariate results tibble for plotting
 uni_res <- uni_res %>%
@@ -309,7 +323,7 @@ deseq2_volcano(uni_res, uni_res_filt,
 ```
 
 
-```{r, message = FALSE, fig.dim = c(16, 8), out.width = "100%"}
+```{r univariate_hm, message = FALSE, fig.dim = c(16, 8), out.width = "100%"}
 ### heatmap
 # prep the annotation for hm
 anno <- data.frame(Label = as.factor(t(norm_log2_d1)[, "Label"]))
@@ -319,7 +333,7 @@ d1_mod <- norm_log2_d1[-1, ] %>%
   rownames_to_column("variable") %>%
   mutate(across(-variable, as.numeric))
 
-# 2) heatma
+# 2) heatmap
 deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
   top_n = NULL, col_order = NULL,
   save = FALSE, padj_col = NULL
@@ -327,7 +341,7 @@ deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
 ```
 
 
-```{r, message = FALSE}
+```{r univariate_venn, message = FALSE}
 ### venn diagram
 plot_set1 <- uni_res %>%
   filter(BHT < FDR) %>%
@@ -345,3 +359,106 @@ make_venn(v_data)
 # Multivariate
 
 
+```{r}
+label = as.character(norm_log2_d1[1, ])
+norm_log2_d1_mod <- norm_log2_d1[-1,] %>%
+  rownames_to_column(.,var = "rowname") %>%
+  mutate(across(-rowname, as.numeric)) %>%
+  column_to_rownames(., var = "rowname")
+```
+
+
+Detect outliers:
+
+
+```{r detect_outliers, message = FALSE, results = "hide"}
+# input overview
+ropls::view(norm_log2_d1_mod)
+
+# Outlier diagnostics
+my.pca <- ropls::opls(as.data.frame(t(norm_log2_d1_mod)), 
+                      parAsColFcVn = label, 
+                      fig.pdfC = "none", 
+                      info.txtC = "pca_info.txt")
+plot(my.pca, typeVc = "outlier", parAsColFcVn = label, fig.pdfC = "interactive")
+```
+
+
+## OPLS-DA
+
+
+```{r opls_da}
+my.oplsda <- ropls::opls(t(norm_log2_d1_mod), label, 
+                         predI = 1, orthoI = NA, permI = 10, 
+                         fig.pdfC = "none", info.txtC = "OPLS-DA_info.txt")
+# OPLS-DA_overview
+plot(my.oplsda, parAsColFcVn = label, fig.pdfC = "interactive")
+# OPLS-DA scores
+plot(my.oplsda, typeVc = "x-score", parAsColFcVn = label, 
+     parLabVc = rep('o', length(label)), fig.pdfC = "interactive")
+```
+
+
+## PLS-DA
+
+
+:::: {.bluebox data-latex=""}
+::: {.center data-latex=""}
+**ATTENTION**
+:::
+
+Please change the outliers vector `outliers` below to the outliers detected above for PLS-DA analysis:
+
+::::
+
+
+```{r define_outliers, echo = TRUE}
+outliers <- c("Sample_26", "Sample_9", "Sample_68", "Sample_44")
+```
+
+
+### PLS-DA Full
+
+
+```{r pls_da_full}
+plsda_full <- pls_da(norm_log2_d1_mod, label)
+plsda_full_res <- plsda_full[[1]]
+plsda_full_plot <- plsda_full[[2]]
+plsda_full_vip <- plsda_full[[3]]
+```
+
+
+### PLS-DA Partial, with no outliers
+
+
+```{r pls_da_partial}
+norm_log2_d1_mod_no_outlier <- norm_log2_d1_mod[ , !colnames(norm_log2_d1_mod) %in% outliers]
+label_no_outlier <- t(norm_log2_d1[1, ])[!rownames(t(norm_log2_d1[1, ])) %in% outliers, ] %>% as.character()
+plsda_partial <- pls_da(norm_log2_d1_mod_no_outlier, label_no_outlier)
+plsda_partial_res <- plsda_partial[[1]]
+plsda_partial_plot <- plsda_partial[[2]]
+plsda_partial_vip <- plsda_partial[[3]]
+```
+
+### VIP comparison table
+
+```{r pls_da_res}
+# VIP table
+tibble(
+  "Full VIP" = names(plsda_full_vip),
+  "Full score" = plsda_full_vip,
+  "Partial VIP" = names(plsda_partial_vip),
+  "Partial score" = plsda_partial_vip
+) %>%   
+  mutate(across(c("Full score", "Partial score"), ~round(.x, 4))) %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 15),
+                              # scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+```{r, eval=FALSE}
+do_multivariate(norm_log2_d1)
+```

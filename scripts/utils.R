@@ -26,6 +26,17 @@ do_normalization_short <- function(df, method = "EigenMS"){
   return(norm_df)
 }
 
+pls_da <- function(df, label) {
+  my.plsda <- ropls::opls(t(df), label, fig.pdfC = "none",
+                          info.txtC = "PLS-DA_info.txt")
+  # PLS-DA_overview
+  plsda_plot <- plot(my.plsda, parAsColFcVn = label, fig.pdfC = "interactive")
+
+  my.vip <- sort(ropls::getVipVn(my.plsda), decreasing = T)
+
+  return(list(my.plsda, plsda_plot, my.vip))
+}
+
 
 # ------------------------ Visualization
 
@@ -120,8 +131,8 @@ ggplot_carqq <- function(data, title) {
       title = title
     ) +
     theme_bw() +
-   scale_x_continuous(limits = c(-limit, limit)) +
-   scale_y_continuous(limits = c(min(df$x_sample), max(df$x_sample)))
+    scale_x_continuous(limits = c(-limit, limit)) +
+    scale_y_continuous(limits = c(min(df$x_sample), max(df$x_sample)))
 }
 
 
@@ -146,3 +157,4 @@ ggplot_pca <- function(data, labels, title) {
     ylab(paste("PC2", round((pc1@R2[2] * 100), digits = 1), "% of the variance")) +
     ggtitle(label = title)
 }
+
