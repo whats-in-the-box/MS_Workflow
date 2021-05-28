@@ -44,7 +44,7 @@ EigenMS_norm <- function(df,grps){
   #m_logInts = convert_log2(type.convert(m_logInts))
   m_mets.info = as.matrix(make_meta(df, 1))#[-1])
 
-  set.seed(123)
+  # set.seed(123)
   # first portion of EigenMS: identify bias trends
   hs_m_ints_eig1 = eig_norm1(m=m_logInts,treatment = grps,
                              prot.info=m_mets.info)

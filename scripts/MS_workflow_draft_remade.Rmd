@@ -53,23 +53,6 @@ missing_df <- dplyr::tibble() %>%
   tibble::add_column(Stage = as.character(""),
                      No_of_missing = as.numeric(""))
 
-# declare function to add rows to track missing table
-#' Track missing signal at different stages 
-#'
-#' @param stage_name Character. The stage of workflow. 
-#' @param no_of_missing Numeric. The number of missing data.
-#'
-#' @return A data frame.
-#'
-track_missing <- function(stage_name, no_of_missing) {
-  missing_df <- missing_df %>%
-  dplyr::add_row(
-    Stage = stage_name,
-    No_of_missing = no_of_missing
-  )
-  return(missing_df)
-}
-
 ```
 
 # Data Preparation and formatting {.tabset .tabset-fade}
@@ -94,7 +77,8 @@ missing_df <- track_missing("Raw file", sum(fh == 0))
 
 
 ```{r}
-raw.file <- presence.absence(fh)[,-(1:2)]
+# raw.file <- presence.absence(fh)[,-(1:2)]
+raw.file <- presence_absence(fh)
 # display data
 raw.file %>%
   DT::datatable(., options = list(pagingType = "full_numbers",
@@ -111,13 +95,17 @@ missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
 
 
 ```{r}
-imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = 7, rowmax = 0.5, 
+# # compute k for impute.knn
+# k <- raw.file %>% length() %>% sqrt()
+# if (is.integer(k)) k = k else k = ceiling(k)
+# k <- if_else(k >= 3, k, 3)
+k = 7
+imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = k, rowmax = 0.5, 
                               colmax = 0.8, maxp = 1500)
 imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
 # draw histogram
 # appropriate title? "Raw values after imputation"
-hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Raw values after Imputation")
-hist_imputed
+(hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Raw values after Imputation"))
 # save data
 write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
 # add NA number
@@ -138,8 +126,7 @@ PCA of data matrix after imputation
 
 
 ```{r}
-pca_initial <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation")
-pca_initial
+(pca_initial <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation"))
 ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", width = 6, height = 6)
 ```
 
@@ -153,17 +140,12 @@ todo: add batch correction - BT
 log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
 
 # draw histogram
-hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
-hist_log2
-qq_log2 <- ggplot_carqq(unlist(log2_d1), "Log2 Transformed")
-qq_log2
-pca_log2 <- ggplot_pca(log2_d1, labels_d1, "Log2 Transformed")
-pca_log2
+(hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed"))
+(qq_log2 <- ggplot_carqq(unlist(log2_d1), "Log2 Transformed"))
+(pca_log2 <- ggplot_pca(log2_d1, labels_d1, "Log2 Transformed"))
 
 ggsave(file.path(WORKING_DIR, "Histogram-log2transformedNoDup.pdf"), 
        hist_log2, device = "pdf", width = 10, height = 8)
-
-log2_d1 <- rbind.data.frame(t(labels_d1), log2_d1)
 ```
 
 
@@ -179,11 +161,10 @@ knitr::kable(missing_df, align = "c")
 ```
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(hist_imputed, pca_initial, hist_log2, qq_log2, 
-          nrow = 2)
+plot_grid(hist_imputed, pca_initial, hist_log2, qq_log2, nrow = 2)
 ```
 
-```{r norm_check1, include = FALSE}
+```{r norm_check1, include = FALSE, eval = FALSE}
 normality_check(log2_d1)
 ```
 
@@ -195,13 +176,10 @@ normality_check(log2_d1)
 
 
 ```{r eigenMS, message = FALSE}
-norm_eigenms <- do_normalization_short(log2_d1)
-hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "EigenMS")
-hist_eigenms
-qq_eigenms <- ggplot_carqq(unlist(norm_eigenms[-1,]), "EigenMS")
-qq_eigenms
-pca_eigenms <- ggplot_pca(norm_eigenms[-1,], labels_d1, "EigenMS")
-pca_eigenms
+norm_eigenms <- do_normalization_short(log2_d1, labels_d1)
+(hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "EigenMS"))
+(qq_eigenms <- ggplot_carqq(unlist(norm_eigenms[-1,]), "EigenMS"))
+(pca_eigenms <- ggplot_pca(norm_eigenms[-1,], labels_d1, "EigenMS"))
 ```
 
 
@@ -209,13 +187,10 @@ pca_eigenms
 
 
 ```{r c_spline, message = FALSE, results = FALSE}
-norm_cspline <- do_normalization_short(log2_d1, method = "Cubic Spline")
-hist_cspline <- ggplot_truehist(unlist(norm_cspline[-1,]), "Cubic Spline")
-hist_cspline
-qq_cspline <- ggplot_carqq(unlist(norm_cspline[-1,]), "Cubic Spline")
-qq_cspline
-pca_cspline <- ggplot_pca(norm_cspline[-1,], labels_d1, "Cubic Spline")
-pca_cspline
+norm_cspline <- do_normalization_short(log2_d1, labels_d1, method = "Cubic Spline")
+(hist_cspline <- ggplot_truehist(unlist(norm_cspline[-1,]), "Cubic Spline"))
+(qq_cspline <- ggplot_carqq(unlist(norm_cspline[-1,]), "Cubic Spline"))
+(pca_cspline <- ggplot_pca(norm_cspline[-1,], labels_d1, "Cubic Spline"))
 ```
 
 
@@ -223,20 +198,17 @@ pca_cspline
 
 
 ```{r, fig.dim = c(18, 6), out.width = "100%"}
-plot_grid(pca_initial, pca_eigenms, pca_cspline,
-          nrow = 1)
+plot_grid(pca_initial, pca_eigenms, pca_cspline, nrow = 1)
 ```
 
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(hist_log2, hist_eigenms, hist_cspline,
-          nrow = 1)
+plot_grid(hist_log2, hist_eigenms, hist_cspline, nrow = 1)
 ```
 
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(qq_log2, qq_eigenms, qq_cspline,
-          nrow = 1)
+plot_grid(qq_log2, qq_eigenms, qq_cspline, nrow = 1)
 ```
 
 <!-- the below shiny block worked but cannot do what I have in mind -->
@@ -351,12 +323,11 @@ plot_set2 <- uni_res %>%
   pull(variable)
 # v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
 v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
-
 make_venn(v_data)
 ```
 
 
-# Multivariate
+# Multivariate {.tabset .tabset-fade}
 
 
 ```{r}
@@ -368,7 +339,7 @@ norm_log2_d1_mod <- norm_log2_d1[-1,] %>%
 ```
 
 
-Detect outliers:
+## Outlier diagnostic
 
 
 ```{r detect_outliers, message = FALSE, results = "hide"}
@@ -384,22 +355,7 @@ plot(my.pca, typeVc = "outlier", parAsColFcVn = label, fig.pdfC = "interactive")
 ```
 
 
-## OPLS-DA
-
-
-```{r opls_da}
-my.oplsda <- ropls::opls(t(norm_log2_d1_mod), label, 
-                         predI = 1, orthoI = NA, permI = 10, 
-                         fig.pdfC = "none", info.txtC = "OPLS-DA_info.txt")
-# OPLS-DA_overview
-plot(my.oplsda, parAsColFcVn = label, fig.pdfC = "interactive")
-# OPLS-DA scores
-plot(my.oplsda, typeVc = "x-score", parAsColFcVn = label, 
-     parLabVc = rep('o', length(label)), fig.pdfC = "interactive")
-```
-
-
-## PLS-DA
+## PLS-DA 
 
 
 :::: {.bluebox data-latex=""}
@@ -413,7 +369,7 @@ Please change the outliers vector `outliers` below to the outliers detected abov
 
 
 ```{r define_outliers, echo = TRUE}
-outliers <- c("Sample_26", "Sample_9", "Sample_68", "Sample_44")
+outliers <- c("Sample_44")
 ```
 
 
@@ -459,6 +415,21 @@ tibble(
 ```
 
 
-```{r, eval=FALSE}
+## OPLS-DA
+
+
+```{r opls_da}
+my.oplsda <- ropls::opls(t(norm_log2_d1_mod), label, 
+                         predI = 1, orthoI = NA, permI = 10, 
+                         fig.pdfC = "none", info.txtC = "OPLS-DA_info.txt")
+# OPLS-DA_overview
+plot(my.oplsda, parAsColFcVn = label, fig.pdfC = "interactive")
+# OPLS-DA scores
+plot(my.oplsda, typeVc = "x-score", parAsColFcVn = label, 
+     parLabVc = rep('o', length(label)), fig.pdfC = "interactive")
+```
+
+
+```{r, eval = FALSE}
 do_multivariate(norm_log2_d1)
 ```

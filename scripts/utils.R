@@ -1,9 +1,74 @@
+#' Track missing signal at different stages
+#'
+#' @param stage_name Character. The stage of workflow.
+#' @param no_of_missing Numeric. The number of missing data.
+#'
+#' @return A data frame.
+#'
+track_missing <- function(stage_name, no_of_missing) {
+  missing_df <- missing_df %>%
+    dplyr::add_row(
+      Stage = stage_name,
+      No_of_missing = no_of_missing
+    )
+  return(missing_df)
+}
 
-do_normalization_short <- function(df, method = "EigenMS"){
+
+presence_absence <- function(fh) {
+  # make tidy, correct type, recode NA
+  tidy_fh <- fh %>%
+    rownames_to_column("rowname") %>%
+    as_tibble() %>%
+    mutate(across(3:ncol(.), ~na_if(., "0"))) %>%
+    mutate(across(3:ncol(.), as.numeric))
+
+  # get NA ratio of each feature for each group
+  na_ratio_fh <- tidy_fh %>%
+    group_by(Label) %>%
+    mutate(group_size = n()) %>%
+    group_by(Label, group_size) %>%
+    summarise(across(-rowname, ~sum(is.na(.x)) / group_size)) %>%
+    distinct()
+
+  # keep features with NA < 0.5
+  fh_ratio_keep <- na_ratio_fh %>%
+    purrr::keep(., purrr::map_lgl(., ~any(.x < 0.50)))
+
+  # Get the df with above "keep" features
+  fh_keep <- tidy_fh %>%
+    select(rowname, colnames(fh_ratio_keep))
+
+  # format for downstream analysis
+  test_raw_file <- fh_keep %>%
+    column_to_rownames("rowname") %>%
+    t()
+}
+
+
+# May 28, 2021 - I think the discrepancy is due to
+# the different way of removing features in the original
+# script and the later workflow, but for sanity check, do below:
+#
+# Note: the dplyr version above also yield different dataframe
+# compared to Bridget's hybrid version, -> will stick to her version
+#
+# # trying to reproduce Bridget's script. Ask
+# # Bridget for the code she used to generate
+# # .Rda for Max
+# tidy_fh %>%
+#   mutate(
+#     nacount = rowSums(is.na(.)),
+#     nfeature = length(select(., where(is.numeric))),
+#     keep = if_else(nacount < nfeature * 0.5, "keep", "reject")
+#   ) %>%
+#   select(rowname, nacount, nfeature, keep)
+
+
+do_normalization_short <- function(df, labels_d1, method = "EigenMS"){
 
   ### data wrangling
-  label <- as.matrix(df[1,])
-  grps = as.factor(t(label))
+  grps = as.factor(t(labels_d1))
 
   df = df[-1,] %>%
     rownames_to_column(.,var = "rowname") %>%
@@ -13,7 +78,7 @@ do_normalization_short <- function(df, method = "EigenMS"){
   choices <- function(method) {
     switch(method,
       "Cubic Spline" = cubic_norm(df),
-      "EigenMS" = EigenMS_norm(df,grps),
+      "EigenMS" = EigenMS_norm(df, grps),
       stop("Normalization method not included.")
     )
   }
@@ -21,19 +86,18 @@ do_normalization_short <- function(df, method = "EigenMS"){
   norm_df <- choices(method)
 
   ### add label back to normalized data frame
-  norm_df <- rbind.data.frame(label, norm_df)
-
+  norm_df <- rbind.data.frame("Label" = as.character(labels_d1),
+                              norm_df)
   return(norm_df)
 }
+
 
 pls_da <- function(df, label) {
   my.plsda <- ropls::opls(t(df), label, fig.pdfC = "none",
                           info.txtC = "PLS-DA_info.txt")
   # PLS-DA_overview
   plsda_plot <- plot(my.plsda, parAsColFcVn = label, fig.pdfC = "interactive")
-
   my.vip <- sort(ropls::getVipVn(my.plsda), decreasing = T)
-
   return(list(my.plsda, plsda_plot, my.vip))
 }
 
