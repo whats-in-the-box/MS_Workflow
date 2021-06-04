@@ -55,6 +55,24 @@ EigenMS_norm <- function(df,grps){
 }
 
 # ------------------------------------------------------------------------------
+#' \code{invariant_norm} is a convenient wrapper around \code{lumi::rankinvariant()},
+#'   to generate a normalized data matrix from a preferably log2 transformed data matrix,
+#'   \code{rownames()} and \code{colnames()} of the output data matrix needs to
+#'   be specified as the same as the input matrix.
+#'
+#' @param df
+#' @return an invariant normalized data matrix
+invariant_norm <- function(df){
+  df= as.matrix(df)
+
+  norm_df <- lumi::rankinvariant(as.matrix(log2_d1))
+  norm_df <- as.data.frame(norm_df)
+#  rownames(norm_df) = rownames(df)
+#  colnames(norm_df) = colnames(df)
+  return(norm_df)
+}
+
+# ------------------------------------------------------------------------------
 #' \code{make_hist} is a visualization function that produce side-by-side histograms
 #'   from a data matrix, before and after selected normalization method, using \code{hist()} and
 #'   \code{MASS::truehist()} functions, respectively.

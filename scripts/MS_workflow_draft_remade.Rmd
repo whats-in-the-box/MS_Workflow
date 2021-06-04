@@ -41,7 +41,7 @@ suppressPackageStartupMessages(c(
 
 ```{r setup_run}
 # user declared variables
-raw_data_file <- "D:/2021_Checco/Unnormalized peak areas/Unnormalized all protein-peptides No Dup.csv"
+raw_data_file <- "C:/Users/qiuha/OneDrive - University of Nebraska-Lincoln/BCRF/DLSC_Projects/Checco/Unnormalized peak areas/peptide_unnormalized_NoDup.csv"
 
 FDR <- 0.05
 LOG2FC <- 0
@@ -77,8 +77,7 @@ missing_df <- track_missing("Raw file", sum(fh == 0))
 
 
 ```{r}
-# raw.file <- presence.absence(fh)[,-(1:2)]
-raw.file <- presence_absence(fh)
+raw.file <- presence.absence(fh)[,-c(1,2)]
 # display data
 raw.file %>%
   DT::datatable(., options = list(pagingType = "full_numbers",
@@ -106,6 +105,9 @@ imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
 # draw histogram
 # appropriate title? "Raw values after imputation"
 (hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Raw values after Imputation"))
+(qq_imputed <- ggplot_carqq(unlist(imputed_d1), "Raw values after Imputation"))
+(pca_imputed <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation"))
+ggsave(file.path(WORKING_DIR, "PCA-Imputed.pdf"), pca_imputed, device = "pdf", width = 6, height = 6)
 # save data
 write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
 # add NA number
@@ -121,14 +123,6 @@ at different stages of the workflow:
 knitr::kable(missing_df, align = "c")
 ```
 
-
-PCA of data matrix after imputation
-
-
-```{r}
-(pca_initial <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation"))
-ggsave(file.path(WORKING_DIR, "PCA-Initial.pdf"), pca_initial, device = "pdf", width = 6, height = 6)
-```
 
 todo: add batch correction - BT
 
@@ -149,7 +143,7 @@ ggsave(file.path(WORKING_DIR, "Histogram-log2transformedNoDup.pdf"),
 ```
 
 
-# Normality and Missing data check before further normalization
+# Check for missing data and normality before further processing
 
 
 The table below shows the number of missing values in the dataset 
@@ -161,7 +155,7 @@ knitr::kable(missing_df, align = "c")
 ```
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(hist_imputed, pca_initial, hist_log2, qq_log2, nrow = 2)
+plot_grid(hist_imputed, pca_imputed, qq_imputed, hist_log2, pca_log2, qq_log2, nrow = 2)
 ```
 
 ```{r norm_check1, include = FALSE, eval = FALSE}
@@ -194,21 +188,32 @@ norm_cspline <- do_normalization_short(log2_d1, labels_d1, method = "Cubic Splin
 ```
 
 
+## Invariant
+
+
+```{r invariant, message = FALSE, results = FALSE}
+norm_invariant <- do_normalization_short(log2_d1, labels_d1, method = "Invariant")
+(hist_invariant <- ggplot_truehist(unlist(norm_invariant[-1,]), "Invariant"))
+(qq_invariant <- ggplot_carqq(unlist(norm_invariant[-1,]), "Invariant"))
+(pca_invariant <- ggplot_pca(norm_invariant[-1,], labels_d1, "Invariant"))
+```
+
+
 # Normality check for different methods
 
 
 ```{r, fig.dim = c(18, 6), out.width = "100%"}
-plot_grid(pca_initial, pca_eigenms, pca_cspline, nrow = 1)
+plot_grid(pca_eigenms, pca_cspline, pca_invariant, nrow = 1)
 ```
 
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(hist_log2, hist_eigenms, hist_cspline, nrow = 1)
+plot_grid(hist_eigenms, hist_cspline, hist_invariant, nrow = 1)
 ```
 
 
 ```{r, fig.dim = c(10, 5), out.width = "100%"}
-plot_grid(qq_log2, qq_eigenms, qq_cspline, nrow = 1)
+plot_grid(qq_eigenms, qq_cspline, qq_invariant, nrow = 1)
 ```
 
 <!-- the below shiny block worked but cannot do what I have in mind -->
@@ -218,7 +223,7 @@ plot_grid(qq_log2, qq_eigenms, qq_cspline, nrow = 1)
 selectInput(
   "norm_method", 
   "Which method to use for normalization?",
-  list("EigenMS", "Cubic Spline"),
+  list("EigenMS", "Cubic Spline", "Invariant"),
   )
 
 renderText({
@@ -239,7 +244,7 @@ Please change the normalization method `norm_method` below to the chosen normali
 ```{r choose_norm, echo = TRUE}
 norm_method <- "EigenMS"
 
-norm_res <- list("EigenMS" = norm_eigenms, "Cubic Spline" = norm_cspline) 
+norm_res <- list("EigenMS" = norm_eigenms, "Cubic Spline" = norm_cspline, "Invariant" = norm_invariant) 
 norm_log2_d1 <- norm_res[[norm_method]]
 ```
 

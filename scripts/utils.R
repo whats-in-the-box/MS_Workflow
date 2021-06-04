@@ -79,6 +79,7 @@ do_normalization_short <- function(df, labels_d1, method = "EigenMS"){
     switch(method,
       "Cubic Spline" = cubic_norm(df),
       "EigenMS" = EigenMS_norm(df, grps),
+      "Invariant" = invariant_norm(df),
       stop("Normalization method not included.")
     )
   }
