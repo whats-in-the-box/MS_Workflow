@@ -1,3 +1,64 @@
+
+#'------------------------------------------------------------------------------
+#' Title
+#'
+#' @param filename
+#' @param featurecol
+#' @param samplecol
+#'
+#' @return
+#' @export
+#'
+#' @examples
+upload.file <- function(filename, featurecol, samplecol) {
+  fh <- read.csv(filename, header = TRUE)
+  fileparsed <- fh[,c(featurecol, samplecol)]
+  fileparsed <- as.data.frame(t(fileparsed));
+  colnames(fileparsed) <- fileparsed[1,]; fileparsed <- fileparsed[-1,]
+  return(fileparsed)
+}
+
+
+#'------------------------------------------------------------------------------
+#' Title
+#'
+#' @param input_file
+#'
+#' @return
+#' @export
+#'
+#' @examples
+presence.absence <- function(input_file){
+  library(tidyr)
+  library(dplyr)
+  t1 <- input_file %>%
+    na_if(0)
+  pheno_groups <- unique(t1$Label); group_num <- length(pheno_groups)
+
+  for (i in 1:group_num){
+    t2 <- t1 %>%
+      filter(Label == pheno_groups[i])
+
+    t1[paste0('missing', pheno_groups[i]),] <- as.matrix(apply(t2, 2, function(x) (sum(is.na(x)))/dim(t2)[1]))
+    t1 <- rbind.data.frame(slice(t1[paste0('missing', pheno_groups[i]),]),t1[-dim(t1)[1],])
+  }
+  t1 <- as.data.frame(t(t1[,-1]))
+  keep_file <- data.frame()
+  reject_file <- data.frame()
+  #  write(reject_file, "absentFeatures.txt", append = TRUE)
+  for (i in 1:dim(t1)[1]){
+    if( mean(as.numeric(unlist(t1[i,1:group_num]))) < .50 ){
+      keep_file <- rbind.data.frame(t1[i,], keep_file)
+    }
+    else {
+      reject_file <- rbind.data.frame(t1[i,], reject_file)
+    }
+  }
+  return(keep_file)
+}
+
+
+#'------------------------------------------------------------------------------
 #' Track missing signal at different stages
 #'
 #' @param stage_name Character. The stage of workflow.
@@ -15,57 +76,16 @@ track_missing <- function(stage_name, no_of_missing) {
 }
 
 
-presence_absence <- function(fh) {
-  # make tidy, correct type, recode NA
-  tidy_fh <- fh %>%
-    rownames_to_column("rowname") %>%
-    as_tibble() %>%
-    mutate(across(3:ncol(.), ~na_if(., "0"))) %>%
-    mutate(across(3:ncol(.), as.numeric))
-
-  # get NA ratio of each feature for each group
-  na_ratio_fh <- tidy_fh %>%
-    group_by(Label) %>%
-    mutate(group_size = n()) %>%
-    group_by(Label, group_size) %>%
-    summarise(across(-rowname, ~sum(is.na(.x)) / group_size)) %>%
-    distinct()
-
-  # keep features with NA < 0.5
-  fh_ratio_keep <- na_ratio_fh %>%
-    purrr::keep(., purrr::map_lgl(., ~any(.x < 0.50)))
-
-  # Get the df with above "keep" features
-  fh_keep <- tidy_fh %>%
-    select(rowname, colnames(fh_ratio_keep))
-
-  # format for downstream analysis
-  test_raw_file <- fh_keep %>%
-    column_to_rownames("rowname") %>%
-    t()
-}
-
-
-# May 28, 2021 - I think the discrepancy is due to
-# the different way of removing features in the original
-# script and the later workflow, but for sanity check, do below:
-#
-# Note: the dplyr version above also yield different dataframe
-# compared to Bridget's hybrid version, -> will stick to her version
-#
-# # trying to reproduce Bridget's script. Ask
-# # Bridget for the code she used to generate
-# # .Rda for Max
-# tidy_fh %>%
-#   mutate(
-#     nacount = rowSums(is.na(.)),
-#     nfeature = length(select(., where(is.numeric))),
-#     keep = if_else(nacount < nfeature * 0.5, "keep", "reject")
-#   ) %>%
-#   select(rowname, nacount, nfeature, keep)
-
-
-do_normalization_short <- function(df, labels_d1, method = "EigenMS"){
+#'------------------------------------------------------------------------------
+#' do normalization on log transformed data matrix
+#'
+#' @param df
+#' @param labels_d1
+#' @param method
+#'
+#' @return A data frame
+#'
+do_normalization_short <- function(df, labels_d1, method = "EigenMS", ...){
 
   ### data wrangling
   grps = as.factor(t(labels_d1))
@@ -77,9 +97,9 @@ do_normalization_short <- function(df, labels_d1, method = "EigenMS"){
 
   choices <- function(method) {
     switch(method,
-      "Cubic Spline" = cubic_norm(df),
+      "Cubic Spline" = cubic_norm(df, ...),
       "EigenMS" = EigenMS_norm(df, grps),
-      "Invariant" = invariant_norm(df),
+      "Invariant" = invariant_norm(df, ...),
       stop("Normalization method not included.")
     )
   }
@@ -93,18 +113,28 @@ do_normalization_short <- function(df, labels_d1, method = "EigenMS"){
 }
 
 
-pls_da <- function(df, label) {
+#'------------------------------------------------------------------------------
+#' Title
+#'
+#' @param df
+#' @param label
+#' @param WORKING_DIR
+#'
+#' @return
+#' @export
+#'
+#' @examples
+pls_da <- function(df, label, WORKING_DIR) {
   my.plsda <- ropls::opls(t(df), label, fig.pdfC = "none",
-                          info.txtC = "PLS-DA_info.txt")
+                          info.txtC = file.path(WORKING_DIR, "PLS-DA_info.txt") )
   # PLS-DA_overview
-  plsda_plot <- plot(my.plsda, parAsColFcVn = label, fig.pdfC = "interactive")
+  plsda_plot <- ropls::plot(my.plsda, parAsColFcVn = label, fig.pdfC = "interactive",parLabVc = rep('o', length(label)))
   my.vip <- sort(ropls::getVipVn(my.plsda), decreasing = T)
   return(list(my.plsda, plsda_plot, my.vip))
 }
 
 
-# ------------------------ Visualization
-
+#'------------------------------------------------------------------------------
 #' ggplot version of \code{MASS::truehist()}
 #'
 #' @param data A numeric vector.
@@ -128,6 +158,7 @@ ggplot_truehist <- function(data, title) {
 }
 
 
+#'------------------------------------------------------------------------------
 #' ggplot version of \code{car::qqPlot()}
 #'
 #' Code from https://www.tjmahr.com/quantile-quantile-plots-from-scratch/.
@@ -201,6 +232,7 @@ ggplot_carqq <- function(data, title) {
 }
 
 
+#'------------------------------------------------------------------------------
 #' ggplot of \code{pcaMethods::pca()}
 #'
 #' @param data A data matrix.
@@ -223,3 +255,42 @@ ggplot_pca <- function(data, labels, title) {
     ggtitle(label = title)
 }
 
+#'------------------------------------------------------------------------------
+#' Draw a multi-way Venn diagram
+#'
+#' \code{make_multi_venn} is a convenient wrapper around \code{VennDiagram::venn.diagram()} to draw a multi-way Venn diagram.
+#' @param v_data
+#'
+#' @return
+#' @export
+#'
+#' @examples
+make_multi_venn <- function(v_data) {
+  my_col <- RColorBrewer::brewer.pal(8, "Pastel2")
+  futile.logger::flog.threshold(futile.logger::ERROR, name = "VennDiagramLogger")
+  multi_venn_set <- VennDiagram::venn.diagram(
+    x = v_data,
+    filename = NULL,
+    for (a in 1:length(v_data)) {
+       category.names = c(sprintf("%s\n %i", names(v_data[a]), length(v_data[[a]])))
+    },
+    margin = 0.2,
+    resolution = 300,
+    euler.d = FALSE,
+    scaled = FALSE,
+    fill = my_col[1:3],
+    lwd = 1,
+    alpha = rep(0.7, times = length(v_data)),
+    col = rep("grey60", times = length(v_data)),
+    cat.fontface = rep("bold", times = length(v_data)),
+    # cat.fontfamily = c("Lucida Sans", "Lucida Sans"),
+    cat.dist = rep(0.2, times = length(v_data)),
+    ext.text = TRUE
+    # main = sprintf("Overlapped features, FDR: %.2f", fdr),
+    # main.fontface = "bold",
+    # main.fontfamily = "Lucida Sans",
+    # main.cex = 1.5,
+    # main.pos = c(0.5, 0.8)
+  )
+  return(ggplotify::as.ggplot(grid::grobTree(multi_venn_set)))
+}

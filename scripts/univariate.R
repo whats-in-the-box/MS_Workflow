@@ -165,7 +165,7 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
     ) +
     ggrepel::geom_text_repel(
       data = up_top10, aes(label = !!feature_col), na.rm = TRUE,
-      size = 4, family = "Lucida Sans", max.overlaps = 20
+      size = 4, max.overlaps = 20#, family = "Lucida Sans"
     ) +
     geom_point(
       data = down_top10, shape = 21, fill = "blue",
@@ -173,7 +173,7 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
     ) +
     ggrepel::geom_text_repel(
       data = down_top10, aes(label = !!feature_col), na.rm = TRUE,
-      size = 4, family = "Lucida Sans", max.overlaps = 20
+      size = 4, max.overlaps = 20#, family = "Lucida Sans"
     ) +
     ###
     theme_bw(base_size = 14) +
@@ -183,7 +183,7 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
       title = sprintf("FDR: %.2f, log2FC: %.1f", fdr, log2fc)
     ) +
     theme(
-      text = element_text(family = "Lucida Sans", face = "plain"),
+      text = element_text( face = "plain"),#family = "Lucida Sans",
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       axis.line = element_blank(),
@@ -346,6 +346,7 @@ deseq2_hm <- function(transformed_count, df_filt, feature_col, anno,
 #' make_venn(list("A" = 1:100, "B" = 91:150))
 make_venn <- function(v_data) {
   my_col <- RColorBrewer::brewer.pal(8, "Pastel2")
+  futile.logger::flog.threshold(futile.logger::ERROR, name = "VennDiagramLogger")
   pairwise_venn_set12 <- VennDiagram::venn.diagram(
     x = v_data,
     filename = NULL,

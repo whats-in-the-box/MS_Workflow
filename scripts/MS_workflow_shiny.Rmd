@@ -1,0 +1,522 @@
+---
+title: "Omics Workflow"
+author: "Max Qiu, Chia Sin Liew, Bridget Tripp"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: paper
+    css: ../box_style.css
+runtime: shiny
+---
+```{r knitr_opt, include = FALSE}
+  knitr::opts_chunk$set(
+    echo = FALSE,
+    fig.width = 6
+  )
+```
+
+```{r setup, message = FALSE, warning = FALSE, results = "hide"}
+source("normalization.R")
+source("univariate.R")
+source("utils.R")
+
+suppressPackageStartupMessages(c(
+  library(tidyverse),
+  library(ggplot2),
+  library(pcaMethods),
+  library(cowplot),
+  library(shiny)
+))
+```
+
+```{r setup_run,message = FALSE, warning = FALSE, results = "hide"}
+# user declared variables
+raw_data_file <- "Checco_peptide.csv"
+#raw_data_file <- "C:/Users/qiuha/OneDrive - University of Nebraska-Lincoln/BCRF/DLSC_Projects/Heidi_MS/serum/Heidi_serum.csv"
+#raw_data_file <- "C:/Users/qiuha/OneDrive - University of Nebraska-Lincoln/BCRF/DLSC_Projects/Heidi_MS/CSF/Heidi_CSF.csv"
+
+FDR <- 0.05
+LOG2FC <- 0
+WORKING_DIR <- "wd1"
+dir.create(file.path(WORKING_DIR))
+
+# create an empty data frame to track missing data value
+#missing_df <- dplyr::tibble() %>%
+#  tibble::add_column(Stage = as.character(""),
+#                     No_of_missing = as.numeric(""))
+
+```
+
+# Data Preparation and formatting {.tabset .tabset-fade}
+
+Upload file... ...
+
+```{r upload.file}
+fh <- upload.file(raw_data_file, 1, 2:88) ## This needs to be changed, number of sample +1
+message("The file: ", raw_data_file, " has been uploaded.", sep = "\n")
+labels_d1 <- fh %>%
+  rownames_to_column(var = "rowname") %>%
+  select(Label, rowname) %>%
+  column_to_rownames(var = "rowname") %>%
+  as.matrix()
+# add NA number
+#missing_df <- track_missing("Raw file", sum(fh == 0))
+```
+
+
+## Assess features and return present features
+
+
+```{r assess.feature}
+raw.file <- presence.absence(fh)[,-c(1,2)]
+# display data
+raw.file %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"),
+            class = "nowrap")
+# add NA number
+#missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
+```
+
+
+## Impute missing values
+
+
+```{r impute.missing, message=FALSE, results=FALSE}
+## compute k for impute.knn
+k <- raw.file %>% length() %>% sqrt()
+if (k>=3){
+  if (is.integer(k)) k = k else k = ceiling(k)
+} else {k = 3}
+
+imputed_meta_d1 <- impute::impute.knn(as.matrix(raw.file), k = k, rowmax = 0.5, 
+                              colmax = 0.8, maxp = 1500)
+imputed_d1 <- as.data.frame(imputed_meta_d1[["data"]], colnames = TRUE)
+# draw histogram
+# appropriate title? "Raw values after imputation"
+hist_imputed <- ggplot_truehist(unlist(imputed_d1), "Raw values after Imputation")
+qq_imputed <- ggplot_carqq(unlist(imputed_d1), "Raw values after Imputation")
+pca_imputed <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation")
+
+# save data
+#write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
+# add NA number
+#missing_df <- track_missing("After imputation", sum(imputed_d1==0))
+```
+
+
+```{r summary.imputed, fig.dim=c(18, 6), out.width= "100%", message=FALSE, results=FALSE}
+plot_grid(hist_imputed, pca_imputed, qq_imputed, nrow = 1)
+```
+
+
+The table below shows the number of missing values in the dataset 
+at different stages of the workflow:
+
+
+```{r}
+#knitr::kable(missing_df, align = "c")
+```
+
+
+todo: add batch correction - BT
+
+
+## Log 2 transformation
+
+
+```{r log2, message=FALSE, results=FALSE}
+log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
+# save data
+#write.csv(log2_d1, file.path(WORKING_DIR, "log2_transformed.csv"))
+
+# draw histogram
+hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
+qq_log2 <- ggplot_carqq(unlist(log2_d1), "Log2 Transformed")
+pca_log2 <- ggplot_pca(log2_d1, labels_d1, "Log2 Transformed")
+```
+
+
+```{r summary.log2, fig.dim=c(18, 6), out.width= "100%", message = FALSE, warning = FALSE, results = "hide"}
+plot_grid(hist_log2, pca_log2, qq_log2, nrow = 1)
+```
+
+
+
+# Check for missing data and normality before further processing
+
+
+The table below shows the number of missing values in the dataset 
+at different stages of the workflow:
+
+
+```{r}
+#knitr::kable(missing_df, align = "c")
+```
+
+```{r summary, fig.dim=c(10, 5), out.width= "100%",message=FALSE, results=FALSE}
+plot_grid(hist_imputed, pca_imputed, qq_imputed, hist_log2, pca_log2, qq_log2, nrow = 2)
+```
+
+
+# Normalization {.tabset .tabset-fade}
+
+
+## EigenMS
+
+
+```{r eigenMS, message=FALSE}
+norm_eigenms <- do_normalization_short(log2_d1, labels_d1)
+
+hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "EigenMS")
+qq_eigenms <- ggplot_carqq(unlist(norm_eigenms[-1,]), "EigenMS")
+pca_eigenms <- ggplot_pca(norm_eigenms[-1,], labels_d1, "EigenMS")
+```
+
+
+```{r summary.eigenms, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_eigenms, qq_eigenms, pca_eigenms, nrow = 1)
+```
+
+
+## Cubic Spline
+
+
+```{r c_spline, message=FALSE, results=FALSE}
+norm_cspline <- do_normalization_short(log2_d1, labels_d1, method = "Cubic Spline", samples = 0.02)
+
+hist_cspline <- ggplot_truehist(unlist(norm_cspline[-1,]), "Cubic Spline")
+qq_cspline <- ggplot_carqq(unlist(norm_cspline[-1,]), "Cubic Spline")
+pca_cspline <- ggplot_pca(norm_cspline[-1,], labels_d1, "Cubic Spline")
+```
+
+
+```{r summary.cspline, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_cspline, qq_cspline, pca_cspline, nrow = 1)
+```
+
+
+## Invariant
+
+
+```{r invariant, message=FALSE, results=FALSE}
+#log2_d1 <- read.csv(file=file.path(WORKING_DIR, "log2_transformed.csv"),row.names = 1)
+norm_invariant <- do_normalization_short(log2_d1, labels_d1, method = "Invariant")
+
+hist_invariant <- ggplot_truehist(unlist(norm_invariant[-1,]), "Invariant")
+qq_invariant <- ggplot_carqq(unlist(norm_invariant[-1,]), "Invariant")
+pca_invariant <- ggplot_pca(norm_invariant[-1,], labels_d1, "Invariant")
+```
+
+
+```{r summary.invariant, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_invariant, qq_invariant, pca_invariant, nrow = 1)
+```
+
+
+# Pareto scaling {.tabset .tabset-fade}
+
+
+## log2
+
+
+```{r log2-scaling, message=FALSE}
+log2_scale = MetabolAnalyze::scaling(type.convert(log2_d1), type = "pareto") %>%
+  as.data.frame(.)
+hist_log2_scale <- ggplot_truehist(unlist(log2_scale), "Pareto scaling")
+qq_log2_scale <- ggplot_carqq(unlist(log2_scale), "Pareto scaling")
+pca_log2_scale <- ggplot_pca(log2_scale, labels_d1, "Pareto scaling")
+```
+
+
+```{r summary.log2.scaling, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_log2_scale, qq_log2_scale, pca_log2_scale, nrow = 1)
+```
+
+
+## EigenMS
+
+
+```{r eigenMS-scaling, message=FALSE}
+eigenms_scale = MetabolAnalyze::scaling(type.convert(norm_eigenms[-1,]), type = "pareto") %>%
+  as.data.frame(.) %>%
+  rbind.data.frame("Label" = as.character(labels_d1),.)
+hist_eigenms_scale <- ggplot_truehist(unlist(eigenms_scale[-1,]), "Pareto scaling")
+qq_eigenms_scale <- ggplot_carqq(unlist(eigenms_scale[-1,]), "Pareto scaling")
+pca_eigenms_scale <- ggplot_pca(eigenms_scale[-1,], labels_d1, "Pareto scaling")
+```
+
+
+```{r summary.eigenms.scaling, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_eigenms_scale, qq_eigenms_scale, pca_eigenms_scale, nrow = 1)
+```
+
+
+## Cubic Spline
+
+
+```{r c_spline-scaling, message=FALSE, results=FALSE}
+cspline_scale = MetabolAnalyze::scaling(type.convert(norm_cspline[-1,]), type = "pareto") %>%
+  as.data.frame(.) %>%
+  rbind.data.frame("Label" = as.character(labels_d1),.)
+hist_cspline_scale <- ggplot_truehist(unlist(cspline_scale[-1,]), "Cubic Spline")
+qq_cspline_scale <- ggplot_carqq(unlist(cspline_scale[-1,]), "Cubic Spline")
+pca_cspline_scale <- ggplot_pca(cspline_scale[-1,], labels_d1, "Cubic Spline")
+```
+
+
+```{r summary.cspline.scaling, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_cspline_scale, qq_cspline_scale, pca_cspline_scale, nrow = 1)
+```
+
+
+## Invariant
+
+
+```{r invariant-scaling, message=FALSE, results=FALSE}
+invariant_scale = MetabolAnalyze::scaling(type.convert(norm_invariant[-1,]), type = "pareto") %>%
+  as.data.frame(.) %>%
+  rbind.data.frame("Label" = as.character(labels_d1),.)
+hist_invariant_scale <- ggplot_truehist(unlist(invariant_scale[-1,]), "Invariant")
+qq_invariant_scale <- ggplot_carqq(unlist(invariant_scale[-1,]), "Invariant")
+pca_invariant_scale <- ggplot_pca(invariant_scale[-1,], labels_d1, "Invariant")
+```
+
+
+```{r summary.invariant.scaling, fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_invariant_scale, qq_invariant_scale, pca_invariant_scale, nrow = 1)
+```
+
+
+# Choose data processing method to proceed
+
+
+```{r choose_norm, echo=FALSE}
+processing_res <- list("EigenMS" = norm_eigenms, "EigenMS-Pareto" = eigenms_scale, "Cubic Spline" = norm_cspline, "Cubic Spline-Pareto" = cspline_scale, "Invariant" = norm_invariant,"Invariant-Pareto" = invariant_scale,"Pareto" = log2_scale)
+
+shinyApp(
+
+  ui = fluidPage(
+    selectInput("processingMethod", "Which method(s) to use for data processing?", choices = list("EigenMS", "EigenMS-Pareto", "Cubic Spline", "Cubic Spline-Pareto", "Invariant", "Invariant-Pareto","Pareto")),
+    
+    textOutput("chosenMethod"),
+    
+    DT::DTOutput("chosenDF")
+  ),
+
+  server = function(input, output) {
+    output$chosenMethod = renderText({
+      paste(input$processing_method, " will be used for downstream analysis. ") })
+    
+    selectedData = reactive({
+      processed_df = processing_res[which(names(processing_res) == input$processingMethod)] %>%
+        as.data.frame(.) })
+    
+    
+    output$chosenDF = DT::renderDT({
+      selectedData()
+      })
+    
+    observeEvent(input$processingMethod, {
+      chosenMethod = data.frame("processingMethod", input$processingMethod)
+      write.csv(chosenMethod,file.path(WORKING_DIR, "chosenMethod.csv"),row.names = FALSE)
+      })
+  }
+
+)
+```
+
+
+# Univariate
+
+
+The table below shows results of univariate analysis. 
+
+`pT` and `BHT`, *p* values and adjusted *p* values for Student's t-Test and `pW` and `BHW`, *p* values and adjusted *p* values for Wilcoxon Rank Sum and Signed Rank Tests.
+
+
+```{r univariant, message=FALSE}
+# first do data formatting
+chosenMethod = read.csv(file.path(WORKING_DIR, "chosenMethod.csv"))
+processed_df = processing_res[chosenMethod$input.processingMethod] %>% as.data.frame(.)
+
+d3_mod <- t(processed_df) %>%
+  as_tibble() %>%
+  mutate(across(-Label, as.numeric)) %>%
+  rename_with(str_trim)
+
+# then do univariate analysis
+uni_res <- do_univariate(d3_mod)
+
+# display table
+uni_res %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+```{r univariate_volcano, fig.dim=c(16, 8), message=FALSE, out.width= "100%"}
+### volcano plot
+# format univariate results tibble for plotting
+uni_res <- uni_res %>%
+  rowwise() %>%
+  mutate(padj = min(c(BHT, BHW))) %>%
+  # get the lowest padj
+  ungroup() %>%
+  mutate(`-log10padj` = -log(padj))
+
+# get DE features only tibble
+uni_res_filt <- uni_res %>%
+  filter(BHT < FDR & BHW < FDR) %>%
+  mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
+
+# 1) volcano plot
+deseq2_volcano(uni_res, uni_res_filt,
+  fdr = FDR, log2fc = LOG2FC,
+  "variable", padj_col = "padj", log2fc_col = "FC(log2)"
+)
+```
+
+
+```{r univariate_hm, fig.dim=c(16, 8), message=FALSE, out.width= "100%"}
+### heatmap
+# prep the annotation for hm
+anno <- data.frame(Label = as.factor(t(processed_df)[, "Label"]))
+
+# prep the transformed matrix for hm
+d1_mod <- processed_df[-1, ] %>%
+  rownames_to_column("variable") %>%
+  mutate(across(-variable, as.numeric))
+
+# 2) heatmap
+deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+  top_n = NULL, col_order = NULL,
+  save = FALSE, padj_col = NULL
+)
+```
+
+
+```{r univariate_venn, message=FALSE}
+### venn diagram
+plot_set1 <- uni_res %>%
+  filter(BHT < FDR) %>%
+  pull(variable)
+plot_set2 <- uni_res %>%
+  filter(BHW < FDR) %>%
+  pull(variable)
+# v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
+make_venn(v_data)
+```
+
+
+# Multivariate {.tabset .tabset-fade}
+
+
+```{r multivariate}
+label = as.character(processed_df[1, ])
+processed_df_mod <- processed_df[-1,] %>%
+  rownames_to_column(.,var = "rowname") %>%
+  mutate(across(-rowname, as.numeric)) %>%
+  column_to_rownames(., var = "rowname")
+```
+
+
+## Outlier diagnostic
+
+
+```{r detect_outliers, message=FALSE, results=FALSE}
+# input overview
+ropls::view(processed_df_mod) #this line keeps hitting error. 
+
+# Outlier diagnostics
+my.pca <- ropls::opls(as.data.frame(t(processed_df_mod)), 
+                      parAsColFcVn = label, 
+                      fig.pdfC = "none",
+                      info.txtC = file.path(WORKING_DIR, "PCA_info.txt"))
+ropls::plot(my.pca, typeVc = "outlier", parAsColFcVn = label, fig.pdfC = "interactive")
+```
+
+
+## PLS-DA 
+
+
+:::: {.bluebox data-latex=""}
+::: {.center data-latex=""}
+**ATTENTION**
+:::
+
+Please change the outliers vector `outliers` below to the outliers detected above for PLS-DA analysis:
+
+::::
+
+
+```{r define_outliers, echo=TRUE}
+outliers <- c("PRO60","PRO55") ## This needs to be changed when change data matrix.
+```
+
+
+### PLS-DA Full
+
+
+```{r pls_da_full}
+plsda_full <- pls_da(processed_df_mod, label,WORKING_DIR)
+plsda_full_res <- plsda_full[[1]]
+plsda_full_plot <- plsda_full[[2]]
+plsda_full_vip <- plsda_full[[3]]
+```
+
+
+### PLS-DA Partial, with no outliers
+
+
+```{r pls_da_partial}
+processed_df_mod_no_outlier <- processed_df_mod[ , !colnames(processed_df_mod) %in% outliers]
+label_no_outlier <- t(processed_df[1, ])[!rownames(t(processed_df[1, ])) %in% outliers, ] %>% as.character()
+
+plsda_partial <- pls_da(processed_df_mod_no_outlier, label_no_outlier, WORKING_DIR)
+plsda_partial_res <- plsda_partial[[1]]
+plsda_partial_plot <- plsda_partial[[2]]
+plsda_partial_vip <- plsda_partial[[3]]
+```
+
+### VIP comparison table
+
+```{r pls_da_res}
+# VIP table
+tibble(
+  "Full VIP" = names(plsda_full_vip),
+  "Full score" = plsda_full_vip,
+  "Partial VIP" = names(plsda_partial_vip),
+  "Partial score" = plsda_partial_vip
+) %>%   
+  mutate(across(c("Full score", "Partial score"), ~round(.x, 4))) %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 15),
+                              # scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+## OPLS-DA
+
+
+```{r opls_da}
+my.oplsda <- ropls::opls(t(processed_df_mod), label, 
+                         predI = 1, orthoI = NA, permI = 10, 
+                         fig.pdfC = "none", info.txtC = file.path(WORKING_DIR, "OPLS-DA_info.txt"),parLabVc = rep('o', length(label)))
+# OPLS-DA_overview
+ropls::plot(my.oplsda, parAsColFcVn = label, fig.pdfC = "interactive",parLabVc = rep('o', length(label)))
+# OPLS-DA scores
+ropls::plot(my.oplsda, typeVc = "x-score", parAsColFcVn = label, 
+     parLabVc = rep('o', length(label)), fig.pdfC = "interactive")
+```
+
