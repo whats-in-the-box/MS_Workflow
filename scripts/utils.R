@@ -10,8 +10,9 @@
 #' @export
 #'
 #' @examples
-upload.file <- function(filename, featurecol, samplecol) {
+upload.file <- function(filename, featurecol) {
   fh <- read.csv(filename, header = TRUE)
+  samplecol = 2:length(fh)
   fileparsed <- fh[,c(featurecol, samplecol)]
   fileparsed <- as.data.frame(t(fileparsed));
   colnames(fileparsed) <- fileparsed[1,]; fileparsed <- fileparsed[-1,]

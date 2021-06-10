@@ -55,7 +55,7 @@ missing_df <- dplyr::tibble() %>%
 Upload file... ...
 
 ```{r upload.file}
-fh <- upload.file(raw_data_file, 1, 2:88) ## This needs to be changed, number of sample +1
+fh <- upload.file(raw_data_file, 1) 
 message("The file: ", raw_data_file, " has been uploaded.", sep = "\n")
 labels_d1 <- fh %>%
   rownames_to_column(var = "rowname") %>%
@@ -314,6 +314,8 @@ The table below shows results of univariate analysis.
 ```{r univariant, message=FALSE}
 # first do data formatting
 processed_df = processing_res[[processingMethod]]
+# save data
+#write.csv(processed_df, file.path(WORKING_DIR, "processed_data.csv"))
 
 d3_mod <- t(processed_df) %>%
   as_tibble() %>%
