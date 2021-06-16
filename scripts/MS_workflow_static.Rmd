@@ -83,7 +83,7 @@ missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
 ```
 
 
-## Impute missing values
+## Check and impute missing values
 
 
 ```{r impute.missing, message=FALSE, results=FALSE}
@@ -147,16 +147,8 @@ plot_grid(hist_log2, pca_log2, qq_log2, nrow = 1)
 
 
 
-# Check for missing data and normality before further processing
+# Normality check before further processing
 
-
-The table below shows the number of missing values in the dataset 
-at different stages of the workflow:
-
-
-```{r}
-knitr::kable(missing_df, align = "c")
-```
 
 ```{r summary, fig.dim=c(10, 5), out.width= "100%",message=FALSE, results=FALSE}
 plot_grid(hist_imputed, pca_imputed, qq_imputed, hist_log2, pca_log2, qq_log2, nrow = 2)
@@ -293,6 +285,16 @@ plot_grid(hist_invariant_scale, qq_invariant_scale, pca_invariant_scale, nrow = 
 
 
 # Choose data processing method to proceed
+
+
+:::: {.bluebox data-latex=""}
+::: {.center data-latex=""}
+**ATTENTION**
+:::
+
+Please change data processing method `processingMethod` below to change data processing method for downstream analysis:
+
+::::
 
 
 ```{r choose_norm, echo=TRUE}
