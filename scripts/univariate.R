@@ -29,24 +29,24 @@ library(RColorBrewer)
 #'     rename(Label = Species) %>%
 #'     get_fc()
 get_fc <- function(d3_mod, linear = TRUE) {
-  if (isTRUE(linear)) {
-    fc_col_name <- "FC(lin)"
-    temp_d <- d3_mod %>%
-      mutate(across(-Label, gtools::logratio2foldchange)) %>%
-      group_by(Label) %>%
-      summarise(across(everything(), mean))
-    (temp_d[2, -1] / temp_d[1, -1]) %>%
-      pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)
-  } else {
-    fc_col_name <- "FC(log2)"
-    temp_d <- d3_mod %>%
-      group_by(Label) %>%
-      summarise(across(everything(), mean))
-    (temp_d[2, -1] - temp_d[1, -1]) %>%
-      pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)
-  }
+        if (isTRUE(linear)) {
+                fc_col_name <- "FC(lin)"
+                temp_d <- d3_mod %>%
+                        mutate(across(-class, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
+                        group_by(class) %>%
+                        summarise(across(everything(), mean))
+                (temp_d[2, -1] / temp_d[1, -1]) %>%
+                        pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)
+        } else {
+                fc_col_name <- "FC(log2)"
+                temp_d <- d3_mod %>%
+                        mutate(across(-class, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
+                        group_by(class) %>%
+                        summarise(across(everything(), mean))
+                log2(temp_d[2, -1] / temp_d[1, -1]) %>%
+                        pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)
+        }
 }
-
 # -----------------------------------------------------------------------------
 #' Compute univariate stats for a data matrix
 #'
@@ -138,7 +138,7 @@ deseq2_volcano <- function(res, df_filt, fdr = fdr, log2fc = log2fc, feature_col
     arrange(padj_col) %>%
     dplyr::slice(1:10)
   ###
-  volcano_xlim <- max(na.omit(dge_df[log2fc_col]))
+  volcano_xlim <- max(na.omit(abs(dge_df[log2fc_col])))
   volcano_ylim <- max(-log10(na.omit(dge_df[padj_col])))
   x_anno <- 0.7 * -volcano_xlim
   y_anno <- 0.9 * volcano_ylim

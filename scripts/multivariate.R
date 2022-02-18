@@ -131,3 +131,22 @@ do_multivariate = function(df, remove_outlier = FALSE, outliers = NULL){
 }
 
 
+#'------------------------------------------------------------------------------
+#' Title
+#'
+#' @param df
+#' @param label
+#' @param WORKING_DIR
+#'
+#' @return
+#' @export
+#'
+#' @examples
+pls_da <- function(df, label, WORKING_DIR, ...) {
+        my.plsda <- ropls::opls(t(df), label, fig.pdfC = "none",
+                                info.txtC = file.path(WORKING_DIR, "PLS-DA_info.txt") )
+        # PLS-DA_overview
+        plsda_plot <- ropls::plot(my.plsda, parAsColFcVn = label, fig.pdfC = "interactive",parLabVc = rep('o', length(label)))
+        my.vip <- sort(ropls::getVipVn(my.plsda), decreasing = T)
+        return(list(my.plsda, plsda_plot, my.vip))
+}

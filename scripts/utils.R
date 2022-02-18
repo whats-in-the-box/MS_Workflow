@@ -295,3 +295,16 @@ make_multi_venn <- function(v_data) {
   )
   return(ggplotify::as.ggplot(grid::grobTree(multi_venn_set)))
 }
+
+#-------------------------------------------------------------------------------
+# Define save plot function ----
+# save a ggplot graph in both PDF and jpg format. The filename should be
+# PATH+filename_without_extension(.jpg, .pdf). 'fig' is the
+# variable returned by ggplot.
+ggsave_both <- function(filename_no_ext, fig_width = 15, fig_height = 10, fig) {
+        ggsave(paste0(filename_no_ext, '.pdf'), device = 'pdf',
+               width = fig_width, height = fig_height, fig)
+
+        ggsave(paste0(filename_no_ext, '.jpg'), device = 'jpg',
+               width = fig_width, height = fig_height, fig)
+}
