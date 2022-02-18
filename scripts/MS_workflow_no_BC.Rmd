@@ -1,6 +1,6 @@
 ---
-title: "Omics Workflow"
-author: "Max Qiu, Chia Sin Liew, Bridget Tripp"
+title: "Omics Workflow (static)"
+author: "Max Qiu"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
   html_document:
@@ -9,7 +9,7 @@ output:
     number_sections: true
     theme: paper
     css: ../box_style.css
-runtime: shiny
+#runtime: shiny
 ---
 ```{r knitr_opt, include = FALSE}
   knitr::opts_chunk$set(
@@ -34,7 +34,7 @@ suppressPackageStartupMessages(c(
 
 ```{r setup_run,message = FALSE, warning = FALSE, results = "hide"}
 # user declared variables
-raw_data_file <- "Checco_peptide.csv"
+raw_data_file <- "../example_data/Checco_peptide.csv"
 #raw_data_file <- "C:/Users/qiuha/OneDrive - University of Nebraska-Lincoln/BCRF/DLSC_Projects/Heidi_MS/serum/Heidi_serum.csv"
 #raw_data_file <- "C:/Users/qiuha/OneDrive - University of Nebraska-Lincoln/BCRF/DLSC_Projects/Heidi_MS/CSF/Heidi_CSF.csv"
 
@@ -44,9 +44,9 @@ WORKING_DIR <- "wd1"
 dir.create(file.path(WORKING_DIR))
 
 # create an empty data frame to track missing data value
-#missing_df <- dplyr::tibble() %>%
-#  tibble::add_column(Stage = as.character(""),
-#                     No_of_missing = as.numeric(""))
+missing_df <- dplyr::tibble() %>%
+  tibble::add_column(Stage = as.character(""),
+                     No_of_missing = as.numeric(""))
 
 ```
 
@@ -55,7 +55,7 @@ dir.create(file.path(WORKING_DIR))
 Upload file... ...
 
 ```{r upload.file}
-fh <- upload.file(raw_data_file, 1, 2:88) ## This needs to be changed, number of sample +1
+fh <- upload.file(raw_data_file, 1) 
 message("The file: ", raw_data_file, " has been uploaded.", sep = "\n")
 labels_d1 <- fh %>%
   rownames_to_column(var = "rowname") %>%
@@ -63,7 +63,7 @@ labels_d1 <- fh %>%
   column_to_rownames(var = "rowname") %>%
   as.matrix()
 # add NA number
-#missing_df <- track_missing("Raw file", sum(fh == 0))
+missing_df <- track_missing("Raw file", sum(fh == 0))
 ```
 
 
@@ -79,11 +79,11 @@ raw.file %>%
                               scrollX = "100%"),
             class = "nowrap")
 # add NA number
-#missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
+missing_df <- track_missing("Before imputation", sum(is.na(raw.file)))
 ```
 
 
-## Impute missing values
+## Check and impute missing values
 
 
 ```{r impute.missing, message=FALSE, results=FALSE}
@@ -105,7 +105,7 @@ pca_imputed <- ggplot_pca(imputed_d1, labels_d1, "Raw values after Imputation")
 # save data
 #write.csv(imputed_d1, file.path(WORKING_DIR, "imputedData.csv"))
 # add NA number
-#missing_df <- track_missing("After imputation", sum(imputed_d1==0))
+missing_df <- track_missing("After imputation", sum(imputed_d1==0))
 ```
 
 
@@ -119,7 +119,7 @@ at different stages of the workflow:
 
 
 ```{r}
-#knitr::kable(missing_df, align = "c")
+knitr::kable(missing_df, align = "c")
 ```
 
 
@@ -132,7 +132,7 @@ todo: add batch correction - BT
 ```{r log2, message=FALSE, results=FALSE}
 log2_d1 <- log2(type.convert(imputed_d1)) ## log2 transformation
 # save data
-#write.csv(log2_d1, file.path(WORKING_DIR, "log2_transformed.csv"))
+write.csv(log2_d1, file.path(WORKING_DIR, "log2_transformed.csv"))
 
 # draw histogram
 hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
@@ -147,16 +147,8 @@ plot_grid(hist_log2, pca_log2, qq_log2, nrow = 1)
 
 
 
-# Check for missing data and normality before further processing
+# Normality check before further processing
 
-
-The table below shows the number of missing values in the dataset 
-at different stages of the workflow:
-
-
-```{r}
-#knitr::kable(missing_df, align = "c")
-```
 
 ```{r summary, fig.dim=c(10, 5), out.width= "100%",message=FALSE, results=FALSE}
 plot_grid(hist_imputed, pca_imputed, qq_imputed, hist_log2, pca_log2, qq_log2, nrow = 2)
@@ -292,42 +284,21 @@ plot_grid(hist_invariant_scale, qq_invariant_scale, pca_invariant_scale, nrow = 
 ```
 
 
-# Choose data processing method to proceed
+# {.unlisted .unnumbered}
 
 
-```{r choose_norm, echo=FALSE}
+::: {.bluebox .caution data-latex="{caution}"}
+
+Choose data processing method to proceed with statistical analysis. In this case, choose `log2-EigenMS` dataset to proceed with statistical analysis. 
+
+:::
+
+
+```{r choose_norm, echo = FALSE}
+processingMethod <- "EigenMS"
+
 processing_res <- list("EigenMS" = norm_eigenms, "EigenMS-Pareto" = eigenms_scale, "Cubic Spline" = norm_cspline, "Cubic Spline-Pareto" = cspline_scale, "Invariant" = norm_invariant,"Invariant-Pareto" = invariant_scale,"Pareto" = log2_scale)
 
-shinyApp(
-
-  ui = fluidPage(
-    selectInput("processingMethod", "Which method(s) to use for data processing?", choices = list("EigenMS", "EigenMS-Pareto", "Cubic Spline", "Cubic Spline-Pareto", "Invariant", "Invariant-Pareto","Pareto")),
-    
-    textOutput("chosenMethod"),
-    
-    DT::DTOutput("chosenDF")
-  ),
-
-  server = function(input, output) {
-    output$chosenMethod = renderText({
-      paste(input$processing_method, " will be used for downstream analysis. ") })
-    
-    selectedData = reactive({
-      processed_df = processing_res[which(names(processing_res) == input$processingMethod)] %>%
-        as.data.frame(.) })
-    
-    
-    output$chosenDF = DT::renderDT({
-      selectedData()
-      })
-    
-    observeEvent(input$processingMethod, {
-      chosenMethod = data.frame("processingMethod", input$processingMethod)
-      write.csv(chosenMethod,file.path(WORKING_DIR, "chosenMethod.csv"),row.names = FALSE)
-      })
-  }
-
-)
 ```
 
 
@@ -341,8 +312,9 @@ The table below shows results of univariate analysis.
 
 ```{r univariant, message=FALSE}
 # first do data formatting
-chosenMethod = read.csv(file.path(WORKING_DIR, "chosenMethod.csv"))
-processed_df = processing_res[chosenMethod$input.processingMethod] %>% as.data.frame(.)
+processed_df = processing_res[[processingMethod]]
+# save data
+#write.csv(processed_df, file.path(WORKING_DIR, "processed_data.csv"))
 
 d3_mod <- t(processed_df) %>%
   as_tibble() %>%
@@ -448,14 +420,14 @@ ropls::plot(my.pca, typeVc = "outlier", parAsColFcVn = label, fig.pdfC = "intera
 ## PLS-DA 
 
 
-:::: {.bluebox data-latex=""}
-::: {.center data-latex=""}
+::: {.bluebox .caution data-latex="{caution}"}
+
 **ATTENTION**
+Please change the outliers vector `outliers` below to the outliers detected above for PLS-DA analysis: 
+
 :::
 
-Please change the outliers vector `outliers` below to the outliers detected above for PLS-DA analysis:
 
-::::
 
 
 ```{r define_outliers, echo=TRUE}

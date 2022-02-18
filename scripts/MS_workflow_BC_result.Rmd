@@ -1,0 +1,407 @@
+---
+title: "Metabolomics analysis result exploration"
+author: "Max Qiu"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: paper
+    css: ../box_style.css
+
+---
+
+```{r knitr_opt, include = FALSE}
+  knitr::opts_chunk$set(
+    echo = FALSE,
+    fig.width = 6
+  )
+```
+
+
+
+```{r setup, echo = FALSE, message = FALSE, results = "hide", bootstrap.show.code = FALSE, bootstrap.show.message = FALSE, warning = FALSE}
+
+suppressPackageStartupMessages(c(
+  library("tidyverse"),
+  library("knitr"),
+  library("knitcitations"),
+  library("cowplot"),
+  library("grid")
+  ))
+cleanbib()
+
+bib <- c(
+  knitr = citation("knitr")[c(1,3)],
+  rmarkdown = citation("rmarkdown")[1],
+  knitcitations = citation("knitcitations"),
+  tidyverse = citation("tidyverse"),
+  pcaMethods = citation("pcaMethods"),
+  cowplot = citation("cowplot"),
+  statTarget = citation("statTarget"),
+  ProteoMM = citation("ProteoMM"),
+  MetabolAnalyze = citation("MetabolAnalyze"),
+  ropls = citation("ropls"),
+  grid = citation("grid")
+)
+
+source("../scripts/normalization.R")
+source("../scripts/univariate.R")
+source("../scripts/multivariate.R")
+source("../scripts/util.R")
+```
+
+
+# Project and data background
+
+
+INPUT PROJECT INFO. 
+
+
+# Batch correction
+
+Batch correction using package `statTarget` evaluates the missing values and a feature will be kept if it has non-zero value for at least 50% of samples (`statTarget` default is 80%) in any one group (remove 292 features). It then imputes missing values for the present features and QC-based signal correction. At last, it removes features CV% > 50% (default, removes 18 features).
+
+
+```{r upload.file, message=FALSE, warning=FALSE}
+# user declared variables
+pheno <- "C:/Users/qiuha/Documents/sources/repos/MS-Workflow/example_data/meta4samples.csv"
+dfile = "C:/Users/qiuha/Documents/sources/repos/MS-Workflow/example_data/data4samples.csv"
+#labels <- read.csv("C:/Users/qiuha/Documents/sources/repos/MS-Workflow/example_data/label4samples.csv", row.names = "SampleName")
+
+message("Files have been uploaded. Batch Correction using statTarget will start soon. ")
+
+statTarget::shiftCor(pheno, dfile,  QCspan = 0.25, Frule = 0.5,
+                     degree = 2,imputeM = "KNN", ntree=500, coCV = 50)
+# add NA number
+dfile = read.csv(dfile)
+missing_df <- track_missing("Raw file", sum(dfile == 0))
+```
+
+
+
+# Data processing {.tabset .tabset-fade}
+
+
+Data preview (after batch correction)
+
+
+```{r upload.after.bc}
+
+data_after_bc <- "statTarget/shiftCor/After_shiftCor/shift_sample_cor.csv"
+fh <- upload.file(data_after_bc, 1) 
+
+labels_d1 <- t(fh) %>%
+        as.data.frame(.)%>%
+        rownames_to_column(var = "rowname") %>%
+        select(rowname, class) %>%
+        column_to_rownames(var = "rowname") %>%
+        `colnames<-`(., "Label") %>%
+        as.matrix() 
+
+message("After batch correction, there are ", (dim(fh)[1]-1), " features left.", sep = "\n")
+
+fh %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"), class = "nowrap")
+
+```
+
+
+The table below shows the number of missing values in the dataset at different stages of the workflow:
+
+
+```{r}
+# add NA number
+missing_df <- track_missing("After batch correction", sum(is.na(fh)))
+
+knitr::kable(missing_df, align = "c")
+```
+
+
+Three step data processing:
+
+* Log2 transformation
+* EigenMS normalization
+
+
+
+## Log2 transformation
+
+
+Data distribution
+
+```{r message=FALSE, warning=FALSE, results=FALSE, echo=FALSE}
+d1 <- fh[-1,]
+log2_d1 <- log2(type.convert(d1)) ## log2 transformation
+# save data
+#write.csv(log2_d1, file.path(WORKING_DIR, "log2_transformed.csv"))
+
+# draw histogram
+hist_log2 <- ggplot_truehist(unlist(log2_d1), "Log2 Transformed")
+qq_log2 <- ggplot_carqq(unlist(log2_d1), "Log2 Transformed")
+pca_log2 <- ggplot_pca(log2_d1, labels_d1, "Log2 Transformed")
+```
+
+
+```{r fig.dim=c(18, 6), out.width= "100%", message = FALSE, warning = FALSE, results = "hide"}
+plot_grid(hist_log2, qq_log2, pca_log2, nrow = 1)
+```
+
+
+Intensity after log2 transformation
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(proBatch)
+
+meta = read.csv(pheno, header = TRUE)
+color_list = sample_annotation_to_colors(meta, factor_columns = c("batch", "class"), numeric_columns = "order")
+# after log2 transformation
+log2_d1_long = matrix_to_long(log2_d1, sample_id_col = "sample")
+plot_boxplot(log2_d1_long, meta, sample_id_col = "sample", batch_col = "batch", color_scheme = color_list[["batch"]], ylimits = c(-15,30)) + ylab("Intensity (log2 scale)") # y-range = 45 for comparison purpose
+
+```
+
+
+
+## EigenMS normalization
+
+Data distribution
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, results='hide'}
+norm_eigenms <- do_normalization_short(log2_d1, labels_d1)
+
+hist_eigenms <- ggplot_truehist(unlist(norm_eigenms[-1,]), "log2-EigenMS")
+qq_eigenms <- ggplot_carqq(unlist(norm_eigenms[-1,]), "log2-EigenMS")
+pca_eigenms <- ggplot_pca(norm_eigenms[-1,], labels_d1, "log2-EigenMS")
+```
+
+
+```{r fig.dim=c(18, 6), out.width="100%"}
+plot_grid(hist_eigenms, qq_eigenms, pca_eigenms, nrow = 1)
+```
+
+
+Intensity after log2 transformation
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+norm_eigenms_mod = norm_eigenms[-1,] %>%
+        as.data.frame() %>%
+        rownames_to_column(., var = "rowname") %>%
+        mutate(across(-rowname, as.numeric)) %>%
+        column_to_rownames(., var = "rowname")
+
+
+norm_eigenms_long = proBatch::matrix_to_long(norm_eigenms_mod, sample_id_col = "sample")
+plot_boxplot(norm_eigenms_long, meta, sample_id_col = "sample", batch_col = "batch", color_scheme = color_list[["batch"]], ylimits = c(-15,30)) + ylab("Intensity (log2 scale, after normalization)") # y-range = 45 for comparison purpose
+
+```
+
+
+##.unlisted .unnumbered}
+
+Choose data processing method to proceed with statistical analysis
+
+
+```{r choose_norm, echo=TRUE}
+processingMethod <- "EigenMS"
+
+processing_res <- list("EigenMS" = norm_eigenms, "EigenMS-Pareto" = eigenms_scale, "Cubic Spline" = norm_cspline, "Cubic Spline-Pareto" = cspline_scale, "Invariant" = norm_invariant,"Invariant-Pareto" = invariant_scale,"Pareto" = log2_scale)
+
+```
+
+
+
+# Univariate
+
+
+The table below shows results of univariate analysis. 
+
+`pT` and `BHT`, *p* values and adjusted *p* values for Student's t-Test and `pW` and `BHW`, *p* values and adjusted *p* values for Wilcoxon Rank Sum and Signed Rank Tests.
+
+
+```{r univariant, message=FALSE}
+# first do data formatting
+processed_df = processing_res[[processingMethod]]
+# save data
+#write.csv(processed_df, file.path(WORKING_DIR, "processed_data.csv"))
+
+d3_mod <- t(processed_df) %>%
+  as_tibble() %>%
+  mutate(across(-Label, as.numeric)) %>%
+  rename_with(str_trim)
+
+# then do univariate analysis
+uni_res <- do_univariate(d3_mod)
+
+# display table
+uni_res %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 10,
+                              scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+```{r univariate_volcano, fig.dim=c(16, 8), message=FALSE, out.width= "100%"}
+### volcano plot
+# format univariate results tibble for plotting
+uni_res <- uni_res %>%
+  rowwise() %>%
+  mutate(padj = min(c(BHT, BHW))) %>%
+  # get the lowest padj
+  ungroup() %>%
+  mutate(`-log10padj` = -log(padj))
+
+# get DE features only tibble
+uni_res_filt <- uni_res %>%
+  filter(BHT < FDR & BHW < FDR) %>%
+  mutate(status = if_else("FC(log2)" < 0, "Down", "Up"))
+
+# 1) volcano plot
+deseq2_volcano(uni_res, uni_res_filt,
+  fdr = FDR, log2fc = LOG2FC,
+  "variable", padj_col = "padj", log2fc_col = "FC(log2)"
+)
+```
+
+
+```{r univariate_hm, fig.dim=c(16, 8), message=FALSE, out.width= "100%"}
+### heatmap
+# prep the annotation for hm
+anno <- data.frame(Label = as.factor(t(processed_df)[, "Label"]))
+
+# prep the transformed matrix for hm
+d1_mod <- processed_df[-1, ] %>%
+  rownames_to_column("variable") %>%
+  mutate(across(-variable, as.numeric))
+
+# 2) heatmap
+deseq2_hm(d1_mod, uni_res_filt, "variable", anno,
+  top_n = NULL, col_order = NULL,
+  save = FALSE, padj_col = NULL
+)
+```
+
+
+```{r univariate_venn, message=FALSE}
+### venn diagram
+plot_set1 <- uni_res %>%
+  filter(BHT < FDR) %>%
+  pull(variable)
+plot_set2 <- uni_res %>%
+  filter(BHW < FDR) %>%
+  pull(variable)
+# v_data <- list("T Test" = plot_set1, "Wilcoxon Test" = plot_set2)
+v_data <- list("Wilcoxon Test" = plot_set2, "T Test" = plot_set1)
+make_venn(v_data)
+```
+
+
+# Multivariate {.tabset .tabset-fade}
+
+
+```{r multivariate}
+label = as.character(processed_df[1, ])
+processed_df_mod <- processed_df[-1,] %>%
+  rownames_to_column(.,var = "rowname") %>%
+  mutate(across(-rowname, as.numeric)) %>%
+  column_to_rownames(., var = "rowname")
+```
+
+
+## Outlier diagnostic
+
+
+```{r detect_outliers, message=FALSE, results=FALSE}
+# input overview
+ropls::view(processed_df_mod) #this line keeps hitting error. 
+
+# Outlier diagnostics
+my.pca <- ropls::opls(as.data.frame(t(processed_df_mod)), 
+                      parAsColFcVn = label, 
+                      fig.pdfC = "none",
+                      info.txtC = file.path(WORKING_DIR, "PCA_info.txt"))
+ropls::plot(my.pca, typeVc = "outlier", parAsColFcVn = label, fig.pdfC = "interactive")
+```
+
+
+## PLS-DA 
+
+
+:::: {.bluebox data-latex=""}
+::: {.center data-latex=""}
+**ATTENTION**
+:::
+
+Please change the outliers vector `outliers` below to the outliers detected above for PLS-DA analysis:
+
+::::
+
+
+```{r define_outliers, echo=TRUE}
+outliers <- c("PRO60","PRO55") ## This needs to be changed when change data matrix.
+```
+
+
+### PLS-DA Full
+
+
+```{r pls_da_full}
+plsda_full <- pls_da(processed_df_mod, label,WORKING_DIR)
+plsda_full_res <- plsda_full[[1]]
+plsda_full_plot <- plsda_full[[2]]
+plsda_full_vip <- plsda_full[[3]]
+```
+
+
+### PLS-DA Partial, with no outliers
+
+
+```{r pls_da_partial}
+processed_df_mod_no_outlier <- processed_df_mod[ , !colnames(processed_df_mod) %in% outliers]
+label_no_outlier <- t(processed_df[1, ])[!rownames(t(processed_df[1, ])) %in% outliers, ] %>% as.character()
+
+plsda_partial <- pls_da(processed_df_mod_no_outlier, label_no_outlier, WORKING_DIR)
+plsda_partial_res <- plsda_partial[[1]]
+plsda_partial_plot <- plsda_partial[[2]]
+plsda_partial_vip <- plsda_partial[[3]]
+```
+
+### VIP comparison table
+
+```{r pls_da_res}
+# VIP table
+tibble(
+  "Full VIP" = names(plsda_full_vip),
+  "Full score" = plsda_full_vip,
+  "Partial VIP" = names(plsda_partial_vip),
+  "Partial score" = plsda_partial_vip
+) %>%   
+  mutate(across(c("Full score", "Partial score"), ~round(.x, 4))) %>%
+  DT::datatable(., options = list(pagingType = "full_numbers",
+                              pageLength = 15),
+                              # scrollX = "100%"),
+            class = "nowrap")
+
+```
+
+
+## OPLS-DA
+
+
+```{r opls_da}
+my.oplsda <- ropls::opls(t(processed_df_mod), label, 
+                         predI = 1, orthoI = NA, permI = 10, 
+                         fig.pdfC = "none", info.txtC = file.path(WORKING_DIR, "OPLS-DA_info.txt"),parLabVc = rep('o', length(label)))
+# OPLS-DA_overview
+ropls::plot(my.oplsda, parAsColFcVn = label, fig.pdfC = "interactive",parLabVc = rep('o', length(label)))
+# OPLS-DA scores
+ropls::plot(my.oplsda, typeVc = "x-score", parAsColFcVn = label, 
+     parLabVc = rep('o', length(label)), fig.pdfC = "interactive")
+```
+

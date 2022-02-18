@@ -32,16 +32,16 @@ get_fc <- function(d3_mod, linear = TRUE) {
         if (isTRUE(linear)) {
                 fc_col_name <- "FC(lin)"
                 temp_d <- d3_mod %>%
-                        mutate(across(-class, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
-                        group_by(class) %>%
+                        mutate(across(-Label, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
+                        group_by(Label) %>%
                         summarise(across(everything(), mean))
                 (temp_d[2, -1] / temp_d[1, -1]) %>%
                         pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)
         } else {
                 fc_col_name <- "FC(log2)"
                 temp_d <- d3_mod %>%
-                        mutate(across(-class, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
-                        group_by(class) %>%
+                        mutate(across(-Label, ~ 2^(.) )) %>% # d3_mod is log-scale number, this step will de-log and change data back to linear number
+                        group_by(Label) %>%
                         summarise(across(everything(), mean))
                 log2(temp_d[2, -1] / temp_d[1, -1]) %>%
                         pivot_longer(everything(), names_to = "variable", values_to = fc_col_name)

@@ -19,7 +19,6 @@ upload.file <- function(filename, featurecol) {
   return(fileparsed)
 }
 
-
 #'------------------------------------------------------------------------------
 #' Title
 #'
