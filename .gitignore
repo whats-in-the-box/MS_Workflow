@@ -3,11 +3,5 @@
 .RData
 .Ruserdata
 MS-Workflow.Rproj
-for_univariate.Rda
-prep_data_for_univariate_cs.r
-peptide.R
-normalization.rda
 /scripts/*.Rmd
 /scripts/*.R
-/scripts/wd1*
-*.png
